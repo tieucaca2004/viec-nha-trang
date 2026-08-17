@@ -1,2 +1,3 @@
 export const SMS_PROVIDER = 'SMS_PROVIDER';
 export const PAYMENT_PROVIDER = 'PAYMENT_PROVIDER';
+export const PUSH_PROVIDER = 'PUSH_PROVIDER';

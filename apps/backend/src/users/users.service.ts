@@ -30,4 +30,9 @@ export class UsersService {
       select: SAFE_USER_SELECT,
     });
   }
+
+  async setPushToken(userId: string, pushToken: string) {
+    await this.prisma.user.update({ where: { id: userId }, data: { pushToken } });
+    return { success: true };
+  }
 }

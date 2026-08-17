@@ -1,0 +1,95 @@
+# CI cho VIỆC NHA TRANG - đặc tả docs/PLAN.md §13.
+# Chỉ lint/typecheck/build/test trên PR. KHÔNG deploy tự động - chưa có GCP project/credentials
+# thật để deploy an toàn (xem docs/DEPLOYMENT.md). Job deploy để lại dưới dạng comment mẫu.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  backend:
+    name: Backend (lint, build, e2e)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: viec_nha_trang_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npx tsc --noEmit
+
+      - run: npm run build
+
+      - name: E2E tests
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/viec_nha_trang_test?schema=public"
+          NODE_ENV: test
+          JWT_ACCESS_SECRET: ci-access-secret
+          JWT_ACCESS_EXPIRES_IN: 15m
+          JWT_REFRESH_SECRET: ci-refresh-secret
+          JWT_REFRESH_EXPIRES_IN: 30d
+          SMS_PROVIDER: console
+          OTP_TTL_SECONDS: "300"
+          OTP_MAX_ATTEMPTS: "5"
+          OTP_REQUEST_THROTTLE_LIMIT: "1000"
+          OTP_VERIFY_THROTTLE_LIMIT: "1000"
+          THROTTLE_TTL: "60"
+          THROTTLE_LIMIT: "5000"
+        run: |
+          npx prisma migrate deploy
+          npx jest --config ./test/jest-e2e.json --runInBand
+
+  admin:
+    name: Admin CMS (build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/admin/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+  # Deploy job MẪU - không chạy tự động (thiếu GCP project/credentials thật trong repo này).
+  # Bật bằng cách thêm secrets GCP_PROJECT_ID/GCP_SA_KEY vào repo settings và đổi `if: false`
+  # thành điều kiện thật (vd tag release) khi có môi trường production thật - xem docs/DEPLOYMENT.md.
+  deploy:
+    name: Deploy to Cloud Run (chưa bật)
+    runs-on: ubuntu-latest
+    needs: [backend, admin]
+    if: false
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Xem docs/DEPLOYMENT.md - job này cố tình để if:false vì chưa có GCP project thật."

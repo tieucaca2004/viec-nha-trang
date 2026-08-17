@@ -39,3 +39,29 @@ phase, per explicit instruction not to expand scope without asking. Nothing here
   in this environment. `flutter pub get && flutter analyze && dart format --set-exit-if-changed .`
   needs to run in an environment that has Flutter installed before the mobile code can be
   trusted beyond "it was hand-written correctly" from Phase 1.
+
+## Found during the master-prompt architecture-adaptation phase (kept NestJS+Postgres, see docs/PLAN.md)
+
+- **k6 load test script (`apps/backend/loadtest/scenarios.js`) doesn't cover "update application
+  status"** — every other required scenario (search, filter, detail, apply, save, employer
+  creates job, employer reads applicants, notifications) does. Adding it means having an
+  employer VU look up an applicant that a different seeker VU just created and transition its
+  status, which needs shared cross-VU state k6 doesn't give you for free — solvable, just not
+  done here. See `docs/LOAD_TESTING.md`.
+- **No load test has been run at the actual target scale** (100/500/1000/5000 concurrent per
+  §6/§49) — only small smoke runs (10-20 VUs) against a single dev machine sharing CPU with
+  Postgres. Needs a real Cloud Run + Cloud SQL deployment and a distributed k6 run (k6 Cloud or
+  multiple VMs) to get meaningful numbers — see `docs/LOAD_TESTING.md` for exactly what was and
+  wasn't proven by the runs that did happen.
+- **Google/Apple Sign-In, real payment gateways, mobile-side image compression before upload,
+  and object storage upload endpoints** remain unimplemented (interfaces/schema exist) — same
+  status as Phase 1/2, unchanged by this phase.
+- **No GCP project, Firebase project, or Cloud Run/Cloud SQL instance exists** for this app in
+  this environment — `docs/DEPLOYMENT.md` is a runnable procedure, not something that has been
+  executed. Same for Firebase Cloud Messaging: the backend-side integration is real and tested
+  (falls back to a safe no-op without config), but no Firebase project has actually been created,
+  so no push notification has ever really reached a device.
+- **`GET /auth/otp/debug/:phone`** exists solely to make load testing possible without reading
+  server logs. It self-disables in production and when the SMS provider isn't the console one,
+  but it's still new attack surface that didn't exist before this phase — worth a second set of
+  eyes before this code goes anywhere near a real deployment, even though it's guarded.

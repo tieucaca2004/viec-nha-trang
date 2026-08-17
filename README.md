@@ -12,8 +12,16 @@ apps/
   mobile/    Flutter app (Android + iOS) - người tìm việc & nhà tuyển dụng
   admin/     Next.js admin CMS
 docs/
-  ARCHITECTURE.md   Phân tích kiến trúc, tech stack, DB, API, auth, RBAC (đặc tả mục 48)
+  ARCHITECTURE.md   Phân tích kiến trúc, tech stack, DB, API, auth, RBAC (Phase 1)
+  PLAN.md           Quyết định kiến trúc trước khi mở rộng scale/infra (giữ NestJS+Postgres thay vì Firestore - đọc mục §0)
+  PHASE2-REPORT.md  Kết quả backend thật + PostgreSQL thật + E2E (Phase 2)
+  DATABASE.md / API.md / SECURITY.md / ENVIRONMENT.md / DEPLOYMENT.md / SCALABILITY.md /
+  LOAD_TESTING.md / COST.md / TESTING.md   Tài liệu vận hành, phản ánh implementation thật
+  ROADMAP.md        Việc đã phát hiện nhưng cố tình chưa làm
 ```
+
+Dockerfile ở `apps/backend/Dockerfile` (build cho Cloud Run), `apps/backend/loadtest/` (script
+k6 thật). CI: `.github/workflows/ci.yml` (lint + build + e2e trên mỗi PR).
 
 ## Yêu cầu
 
