@@ -1,4 +1,5 @@
 import { Controller, Get, Injectable, Module, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -17,6 +18,7 @@ export class AreasService {
   }
 }
 
+@ApiTags('Areas')
 @Controller()
 export class AreasController {
   constructor(private readonly areasService: AreasService) {}

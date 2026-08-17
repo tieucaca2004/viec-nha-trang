@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Injectable, Module, Post, Query, UseGuards } from '@nestjs/common';
 import { BadRequestException } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsInt, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
 import { ReviewerType } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -92,6 +93,8 @@ export class ReviewsService {
   }
 }
 
+@ApiTags('Reviews')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('reviews')
 export class ReviewsController {

@@ -3,8 +3,10 @@ node_modules/
 
 # Backend (NestJS)
 apps/backend/dist/
+apps/backend/coverage/
 apps/backend/.env
-apps/backend/.env.*.local
+apps/backend/.env.*
+!apps/backend/.env.example
 
 # Admin (Next.js)
 apps/admin/.next/

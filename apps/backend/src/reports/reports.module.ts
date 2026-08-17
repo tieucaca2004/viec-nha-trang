@@ -1,4 +1,5 @@
 import { Body, Controller, Injectable, Module, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ReportReason, ReportTargetType } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -38,6 +39,8 @@ export class ReportsService {
   }
 }
 
+@ApiTags('Reports')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('reports')
 export class ReportsController {

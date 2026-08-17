@@ -1,5 +1,5 @@
-import { Type } from 'class-transformer';
-import { IsBoolean, IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsInt, IsLatitude, IsLongitude, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { EmploymentType, SalaryUnit, ShiftPreference } from '@prisma/client';
 
 export enum JobSortBy {
@@ -28,10 +28,12 @@ export class QueryJobsDto {
 
   @IsOptional()
   @Type(() => Number)
+  @IsLatitude()
   latitude?: number;
 
   @IsOptional()
   @Type(() => Number)
+  @IsLongitude()
   longitude?: number;
 
   @IsOptional()
@@ -54,10 +56,11 @@ export class QueryJobsDto {
 
   @IsOptional()
   @Type(() => Number)
+  @IsNumber()
   salaryMin?: number;
 
   @IsOptional()
-  @Type(() => Number)
+  @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   isUrgent?: boolean;
 

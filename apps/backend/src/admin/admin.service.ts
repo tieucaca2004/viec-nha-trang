@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { JobStatus, Prisma, ReportStatus, VerificationLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SAFE_USER_SELECT } from '../common/services/safe-select';
 
 @Injectable()
 export class AdminService {
@@ -28,6 +29,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       skip: params.skip ?? 0,
       take: params.take ?? 20,
+      select: SAFE_USER_SELECT,
     });
   }
 
@@ -35,13 +37,18 @@ export class AdminService {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { isBanned: true, bannedReason: reason },
+      select: SAFE_USER_SELECT,
     });
     await this.audit(adminId, 'user.ban', 'User', userId, { reason });
     return user;
   }
 
   async unbanUser(adminId: string, userId: string) {
-    const user = await this.prisma.user.update({ where: { id: userId }, data: { isBanned: false, bannedReason: null } });
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { isBanned: false, bannedReason: null },
+      select: SAFE_USER_SELECT,
+    });
     await this.audit(adminId, 'user.unban', 'User', userId);
     return user;
   }
@@ -52,7 +59,7 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       skip: params.skip ?? 0,
       take: params.take ?? 20,
-      include: { user: true, locations: true },
+      include: { user: { select: SAFE_USER_SELECT }, locations: true },
     });
   }
 

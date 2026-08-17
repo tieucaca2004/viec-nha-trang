@@ -4,6 +4,8 @@ import {
   IsBoolean,
   IsEnum,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsOptional,
   IsString,
   Min,
@@ -24,12 +26,14 @@ export class UpsertJobSeekerProfileDto {
   @IsString()
   areaId?: string;
 
-  @Type(() => Number)
   @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
   latitude?: number;
 
-  @Type(() => Number)
   @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
   longitude?: number;
 
   @IsOptional()

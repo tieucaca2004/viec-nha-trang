@@ -1,0 +1,23 @@
+# Môi trường development tối thiểu cho backend VIỆC NHA TRANG.
+# Chỉ PostgreSQL - không thêm Redis/Elasticsearch/Kafka khi MVP chưa cần (đặc tả Phase 2 §2).
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viec-nha-trang-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: viec_nha_trang
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d viec_nha_trang"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:

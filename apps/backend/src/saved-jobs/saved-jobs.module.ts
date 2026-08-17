@@ -1,4 +1,5 @@
 import { Controller, Delete, Get, Injectable, Module, Param, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { PrismaService } from '../prisma/prisma.service';
@@ -28,6 +29,8 @@ export class SavedJobsService {
   }
 }
 
+@ApiTags('Saved Jobs')
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('saved-jobs')
 export class SavedJobsController {

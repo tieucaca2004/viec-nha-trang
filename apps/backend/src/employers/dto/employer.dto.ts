@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsOptional, IsString } from 'class-validator';
+import { IsLatitude, IsLongitude, IsOptional, IsString } from 'class-validator';
 
 export class UpsertEmployerProfileDto {
   @IsString()
@@ -28,9 +28,11 @@ export class CreateEmployerLocationDto {
   areaId!: string;
 
   @Type(() => Number)
+  @IsLatitude()
   latitude!: number;
 
   @Type(() => Number)
+  @IsLongitude()
   longitude!: number;
 
   @IsOptional()
