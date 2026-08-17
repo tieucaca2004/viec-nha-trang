@@ -12,12 +12,13 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.2
   provider: ^6.1.2
-  shared_preferences: ^2.3.2
+  flutter_secure_storage: ^9.2.2
   geolocator: ^13.0.1
   url_launcher: ^6.3.0
   intl: ^0.19.0
-  firebase_core: ^3.6.0
-  firebase_messaging: ^15.1.3
+  # firebase_core / firebase_messaging: KHÔNG khai báo cho tới khi có Firebase project thật
+  # (`viec-nha-trang`) và chạy `flutterfire configure` - xem lib/shared/services/push_service.dart
+  # và docs/MOBILE.md. Thêm lại bằng `flutter pub add firebase_core firebase_messaging` khi đó.
 
 dev_dependencies:
   flutter_test:

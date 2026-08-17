@@ -1,6 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsLatitude, IsLongitude, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
-import { EmploymentType, SalaryUnit, ShiftPreference } from '@prisma/client';
+import { EmploymentType, SalaryUnit, ShiftPreference, StartUrgency } from '@prisma/client';
 
 export enum JobSortBy {
   DISTANCE = 'distance',
@@ -67,6 +67,12 @@ export class QueryJobsDto {
   @IsOptional()
   @IsEnum(JobSortBy)
   sortBy?: JobSortBy;
+
+  // Bổ sung Phase 3: mobile filter "Khi nào cần người" (đặc tả §10) - phát hiện API gap
+  // khi implement bộ lọc, thêm field optional này, không đổi hành vi các field khác.
+  @IsOptional()
+  @IsEnum(StartUrgency)
+  startUrgency?: StartUrgency;
 
   @IsOptional()
   @Type(() => Number)

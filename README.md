@@ -17,6 +17,9 @@ docs/
   PHASE2-REPORT.md  Kết quả backend thật + PostgreSQL thật + E2E (Phase 2)
   DATABASE.md / API.md / SECURITY.md / ENVIRONMENT.md / DEPLOYMENT.md / SCALABILITY.md /
   LOAD_TESTING.md / COST.md / TESTING.md   Tài liệu vận hành, phản ánh implementation thật
+  MOBILE.md         Kiến trúc app Flutter, state management, gap API đã sửa, trạng thái từng milestone (Phase 3)
+  BUILD.md          Kết quả build thật từng app (backend/admin/mobile), BLOCKED BY ENVIRONMENT ghi rõ nếu có
+  RELEASE.md        Checklist thật trước khi phát hành mobile lên store (chưa sẵn sàng — xem chi tiết)
   ROADMAP.md        Việc đã phát hiện nhưng cố tình chưa làm
 ```
 
@@ -89,12 +92,23 @@ flutter pub get
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/v1   # 10.0.2.2 cho Android emulator
 ```
 
-Build release:
+Kiểm tra tĩnh + test (không cần Android SDK/Xcode):
+
+```bash
+flutter analyze
+flutter test
+```
+
+Build release (cần Android SDK/Xcode thật — xem [`docs/BUILD.md`](docs/BUILD.md) cho trạng thái
+build đã xác nhận và giới hạn môi trường Phase 3):
 
 ```bash
 flutter build apk --dart-define=API_BASE_URL=https://api.viecnhaTrang.com/api/v1
 flutter build ios --dart-define=API_BASE_URL=https://api.viecnhaTrang.com/api/v1
 ```
+
+Kiến trúc chi tiết, state management (`provider`), gap API phát hiện/sửa trong Phase 3, và trạng
+thái từng milestone (M1-M11): [`docs/MOBILE.md`](docs/MOBILE.md).
 
 ## Môi trường
 

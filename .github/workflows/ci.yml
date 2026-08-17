@@ -82,6 +82,31 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+  mobile:
+    name: Mobile (analyze, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: "stable"
+
+      - run: flutter pub get
+
+      - run: flutter analyze
+
+      - run: flutter test
+
+      # Android SDK có sẵn trên runner ubuntu-latest nên build debug APK chạy được như một smoke
+      # test kiến trúc project (Gradle/manifest) - KHÔNG phải release build, không cần signing.
+      # Xem docs/BUILD.md - đây là điểm khác với sandbox phát triển (bị chặn dl.google.com).
+      - run: flutter build apk --debug
+
   # Deploy job MẪU - không chạy tự động (thiếu GCP project/credentials thật trong repo này).
   # Bật bằng cách thêm secrets GCP_PROJECT_ID/GCP_SA_KEY vào repo settings và đổi `if: false`
   # thành điều kiện thật (vd tag release) khi có môi trường production thật - xem docs/DEPLOYMENT.md.

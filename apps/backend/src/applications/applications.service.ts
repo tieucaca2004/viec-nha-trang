@@ -68,9 +68,11 @@ export class ApplicationsService {
   async listForEmployerJob(userId: string, jobId: string) {
     const job = await this.prisma.job.findUnique({ where: { id: jobId }, include: { employer: true } });
     if (!job || job.employer.userId !== userId) throw new ForbiddenException('Bạn không có quyền xem ứng viên tin này.');
+    // Số điện thoại ứng viên chỉ lộ ra ở đây - employer đã có quan hệ hợp lệ với ứng viên
+    // vì ứng viên chủ động ứng tuyển vào job của chính employer này (docs/SECURITY.md).
     return this.prisma.application.findMany({
       where: { jobId },
-      include: { jobSeeker: true },
+      include: { jobSeeker: { include: { user: { select: { phone: true } } } } },
       orderBy: { createdAt: 'desc' },
     });
   }

@@ -63,6 +63,7 @@ export class JobsService {
       ...(query.salaryUnit ? { salaryUnit: query.salaryUnit } : {}),
       ...(query.salaryMin != null ? { salaryMax: { gte: query.salaryMin } } : {}),
       ...(query.isUrgent ? { isUrgent: true } : {}),
+      ...(query.startUrgency ? { startUrgency: query.startUrgency } : {}),
       ...(query.keyword
         ? {
             OR: [

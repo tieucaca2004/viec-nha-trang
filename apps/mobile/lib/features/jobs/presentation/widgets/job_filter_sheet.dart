@@ -1,0 +1,166 @@
+import 'package:flutter/material.dart';
+import '../../../../shared/models/job.dart';
+import '../../data/jobs_service.dart';
+
+/// Bottom sheet lọc việc làm (đặc tả §10 Phase 3): khoảng cách, khu vực, danh mục, lương,
+/// loại việc, ca, thời gian bắt đầu. Có ÁP DỤNG / XÓA BỘ LỌC.
+class JobFilterSheet extends StatefulWidget {
+  final JobFilters initial;
+  final List<JobCategory> categories;
+  final List<Area> areas;
+
+  const JobFilterSheet({super.key, required this.initial, required this.categories, required this.areas});
+
+  static Future<JobFilters?> show(
+    BuildContext context, {
+    required JobFilters initial,
+    required List<JobCategory> categories,
+    required List<Area> areas,
+  }) {
+    return showModalBottomSheet<JobFilters>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => JobFilterSheet(initial: initial, categories: categories, areas: areas),
+    );
+  }
+
+  @override
+  State<JobFilterSheet> createState() => _JobFilterSheetState();
+}
+
+class _JobFilterSheetState extends State<JobFilterSheet> {
+  late JobFilters _filters;
+  double? _radiusKm;
+
+  @override
+  void initState() {
+    super.initState();
+    _filters = widget.initial.copy();
+    _radiusKm = _filters.radiusKm;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.85,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Bộ lọc', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  children: [
+                    _sectionTitle('Khoảng cách'),
+                    Wrap(
+                      spacing: 8,
+                      children: [1.0, 3.0, 5.0, 10.0]
+                          .map((km) => ChoiceChip(
+                                label: Text('${km.toInt()} km'),
+                                selected: _radiusKm == km,
+                                onSelected: (_) => setState(() => _radiusKm = (_radiusKm == km) ? null : km),
+                              ))
+                          .toList(),
+                    ),
+                    _sectionTitle('Khu vực'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: widget.areas
+                          .map((a) => ChoiceChip(
+                                label: Text(a.name),
+                                selected: _filters.areaId == a.id,
+                                onSelected: (_) => setState(() => _filters.areaId = (_filters.areaId == a.id) ? null : a.id),
+                              ))
+                          .toList(),
+                    ),
+                    _sectionTitle('Danh mục'),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: widget.categories
+                          .map((c) => ChoiceChip(
+                                label: Text(c.name),
+                                selected: _filters.categoryId == c.id,
+                                onSelected: (_) => setState(() => _filters.categoryId = (_filters.categoryId == c.id) ? null : c.id),
+                              ))
+                          .toList(),
+                    ),
+                    _sectionTitle('Loại việc'),
+                    Wrap(
+                      spacing: 8,
+                      children: {'FULL_TIME': 'Full-time', 'PART_TIME': 'Part-time', 'SHIFT_BASED': 'Theo ca', 'SEASONAL': 'Thời vụ'}
+                          .entries
+                          .map((e) => ChoiceChip(
+                                label: Text(e.value),
+                                selected: _filters.employmentType == e.key,
+                                onSelected: (_) => setState(() => _filters.employmentType = (_filters.employmentType == e.key) ? null : e.key),
+                              ))
+                          .toList(),
+                    ),
+                    _sectionTitle('Ca làm'),
+                    Wrap(
+                      spacing: 8,
+                      children: {'MORNING': 'Sáng', 'AFTERNOON': 'Chiều', 'EVENING': 'Tối', 'NIGHT': 'Đêm', 'FLEXIBLE': 'Linh hoạt'}
+                          .entries
+                          .map((e) => ChoiceChip(
+                                label: Text(e.value),
+                                selected: _filters.shift == e.key,
+                                onSelected: (_) => setState(() => _filters.shift = (_filters.shift == e.key) ? null : e.key),
+                              ))
+                          .toList(),
+                    ),
+                    _sectionTitle('Khi nào cần người'),
+                    Wrap(
+                      spacing: 8,
+                      children: {'IMMEDIATE': 'Đi làm ngay', 'WITHIN_3_DAYS': 'Trong 3 ngày', 'WITHIN_7_DAYS': 'Trong 7 ngày'}
+                          .entries
+                          .map((e) => ChoiceChip(
+                                label: Text(e.value),
+                                selected: _filters.startUrgency == e.key,
+                                onSelected: (_) => setState(() => _filters.startUrgency = (_filters.startUrgency == e.key) ? null : e.key),
+                              ))
+                          .toList(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(JobFilters()),
+                      child: const Text('XÓA BỘ LỌC'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () {
+                        _filters.radiusKm = _radiusKm;
+                        Navigator.of(context).pop(_filters);
+                      },
+                      child: const Text('ÁP DỤNG'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _sectionTitle(String text) => Padding(
+        padding: const EdgeInsets.only(top: 16, bottom: 8),
+        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+      );
+}

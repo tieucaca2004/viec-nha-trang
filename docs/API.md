@@ -42,7 +42,7 @@ server-side qua `RolesGuard`, không tin role client tự khai — §34/§8).
 
 | Method | Path | Auth | Ghi chú |
 |---|---|---|---|
-| GET | `/jobs` | — | Filter: keyword, categoryId, areaId, cityId, latitude/longitude/radiusKm, employmentType, shift, salaryUnit, salaryMin, isUrgent, sortBy; pagination `limit`/`offset` |
+| GET | `/jobs` | — | Filter: keyword, categoryId, areaId, cityId, latitude/longitude/radiusKm, employmentType, shift, salaryUnit, salaryMin, isUrgent, startUrgency, sortBy; pagination `limit`/`offset`. `startUrgency` thêm ở Phase 3 (mobile filter §10) |
 | GET | `/jobs/mine` | 🔒[EMPLOYER] | |
 | GET | `/jobs/:id` | — | Tăng `viewCount` |
 | POST | `/jobs` | 🔒[EMPLOYER] | Lương (`salaryMin`/`salaryMax`/`salaryUnit`) bắt buộc — §21 |
@@ -57,7 +57,7 @@ server-side qua `RolesGuard`, không tin role client tự khai — §34/§8).
 |---|---|---|---|
 | POST | `/jobs/:jobId/apply` | 🔒[JOB_SEEKER] | Ứng tuyển 1 chạm; idempotent (apply lại trả về application đã có, không tạo trùng — unique constraint DB) |
 | GET | `/applications/me` | 🔒[JOB_SEEKER] | |
-| GET | `/employer/jobs/:jobId/applications` | 🔒[EMPLOYER] | Chỉ chủ job xem được applicant của job đó |
+| GET | `/employer/jobs/:jobId/applications` | 🔒[EMPLOYER] | Chỉ chủ job xem được applicant của job đó. `jobSeeker.user.phone` — sửa ở Phase 3 (trước đó thiếu `include` nên field này luôn undefined, tính năng "Gọi ứng viên" phía mobile không thể hoạt động) |
 | PATCH | `/applications/:id/status` | 🔒[EMPLOYER] | State machine `NEW→VIEWED→CONTACTED→INTERVIEW→HIRED\|NOT_SUITABLE\|NO_SHOW`, chuyển sai thứ tự → 400 |
 
 ## Đã lưu
