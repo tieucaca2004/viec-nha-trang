@@ -7,6 +7,9 @@ on:
   pull_request:
   push:
     branches: [main, master]
+  # Cho phép chạy CI thủ công trên bất kỳ nhánh nào (vd để xác nhận CI thật trước khi mở PR)
+  # mà không cần push vào main/master hay tạo PR - không ảnh hưởng trigger tự động ở trên.
+  workflow_dispatch:
 
 jobs:
   backend:
