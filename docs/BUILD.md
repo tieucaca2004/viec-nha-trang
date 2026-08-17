@@ -71,17 +71,34 @@ Flutter SDK là có thật, không tránh được bằng version pin nhỏ hơn
 Critical/High của audit này, và cần được duyệt riêng. Đã revert override, `pubspec.yaml`/
 `pubspec.lock` giữ nguyên như trước.
 
-**Việc còn lại để build Android thật chạy được** (2 lựa chọn, cả hai đều là quyết định cần người
-duyệt, không phải patch nhỏ):
-1. Nâng Flutter SDK dự án lên ≥3.29 (đổi cả local toolchain lẫn `flutter-version` trong
-   `.github/workflows/ci.yml`), sau đó nâng `geolocator` lên `^14.0.0` — cần test lại toàn bộ
-   luồng vị trí (`_useMyLocation`, `_useGpsLocation`) trên Flutter mới.
-2. Thay `geolocator` bằng một package định vị khác tương thích Flutter 3.24.x — thay đổi kiến
-   trúc lớn hơn, không khuyến nghị chỉ để fix 1 build step.
-
 **Xác nhận rõ: đây không phải lỗi trong code của project này.** `android/app/build.gradle` (do
 `flutter create` sinh, thuộc project này) cấu hình đúng chuẩn (`compileSdk = flutter.compileSdkVersion`
 — xem file). Lỗi nằm hoàn toàn trong package bên thứ ba `geolocator_android` ở `.pub-cache`.
+
+**Fix thật đã áp dụng (không phải workaround/mock)**: pin `geolocator_android` xuống bản `4.6.1`
+(bản ngay trước khi regression Gradle xuất hiện) qua `dependency_overrides` trong `pubspec.yaml`,
+giữ nguyên `geolocator: ^13.0.1` và Flutter 3.24.5 — không nâng Flutter SDK, không đổi kiến trúc,
+không gỡ geolocator hay tính năng GPS. Xác nhận qua diff trực tiếp Gradle file của 2 bản:
+
+- `geolocator_android 4.6.1`: `android/build.gradle` hard-code `compileSdk 34` / `minSdkVersion 16`
+  — không phụ thuộc extension `flutter` — build được với cơ chế nạp Flutter Gradle Plugin hiện tại.
+- `geolocator_android 4.6.2` (bản mặc định `geolocator ^13.0.1` resolve tới): đổi sang tham chiếu
+  động `flutter.compileSdkVersion` / `flutter.minSdkVersion` — đây là dòng gây lỗi thật.
+- `geolocator_android 5.0.0`: `android/build.gradle` giống hệt byte-for-byte với `4.6.2` (đã diff
+  trực tiếp) — xác nhận bump lên bản kế tiếp KHÔNG sửa được lỗi này.
+- `geolocator_android 5.0.3` (bản có sửa Gradle thật): chỉ đi kèm `geolocator ^14.0.0`, và
+  changelog `geolocator 14.0.0` yêu cầu Flutter SDK ≥3.29 (`Color.toARGB32()`) — không tương
+  thích an toàn với Flutter 3.24.5 đang pin, đã xác nhận lại bằng thử nghiệm override trực tiếp
+  (biên dịch fail thật).
+
+Tương thích: `compileSdk 34` / `minSdkVersion 16` (hard-code trong `geolocator_android 4.6.1`)
+tương thích hoàn toàn với `compileSdk 34` / `minSdk 21` của project (minSdk của plugin thấp hơn
+minSdk của app luôn hợp lệ). Không có breaking change Dart/API giữa 4.6.1 và 4.6.2 (chỉ khác file
+Gradle) — `flutter analyze` (0 lỗi) và `flutter test` (56/56) xác nhận không ảnh hưởng code Dart.
+
+Xác nhận qua GitHub Actions run thật sau khi áp dụng fix — xem link run mới nhất trong lịch sử
+commit của nhánh (`git log`), không lặp lại số run cụ thể ở đây vì file này không tự cập nhật theo
+mỗi lần CI chạy lại.
 
 ### ⚠️ BLOCKED BY ENVIRONMENT — iOS build (M10)
 
@@ -105,7 +122,6 @@ việc build ra binary thật chỉ còn phụ thuộc toolchain của môi trư
 ## CI
 
 `.github/workflows/ci.yml` chạy: `backend` (tsc + test:e2e), `admin` (build), `mobile`
-(flutter analyze + flutter test). CI **không** chạy Android/iOS build — GitHub Actions runner
-(`ubuntu-latest`) có Android SDK sẵn nên có thể bật `flutter build apk --debug` làm smoke test
-khi cần, nhưng chưa bật ở đây để giữ CI nhanh và vì chưa có signing config cho release thật; xem
-`docs/RELEASE.md` cho phần còn thiếu trước khi phát hành thật.
+(flutter analyze + flutter test + `flutter build apk --debug` làm smoke test debug build, chạy
+thật trên `ubuntu-latest` vì runner đó có sẵn Android SDK thật, khác sandbox này). CI không build
+release/signed APK hay iOS — xem `docs/RELEASE.md` cho phần còn thiếu trước khi phát hành thật.

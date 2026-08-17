@@ -25,5 +25,36 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^4.0.0
 
+# Pin geolocator_android xuống 4.6.1 (thay vì bản 4.6.2/^13.x resolve mặc định) - sửa lỗi Android
+# build thật, xác nhận qua GitHub Actions CI (chi tiết điều tra trong docs/BUILD.md).
+#
+# Root cause xác nhận: `geolocator_android` 4.6.2 đổi `android/build.gradle` từ hard-code
+# `compileSdk 34` / `minSdkVersion 16` (bản 4.6.1) sang tham chiếu động `flutter.compileSdkVersion`
+# / `flutter.minSdkVersion`. Trong cách Flutter Gradle Plugin nạp plugin ở Flutter 3.24.5 (declarative
+# `pluginManagement` + `dev.flutter.flutter-gradle-plugin`), extension "flutter" chỉ được tạo trên
+# project `:app` (packages/flutter_tools/gradle/src/main/groovy/flutter.groovy dòng ~264,
+# `project.extensions.create("flutter", ...)`), không được truyền sang các plugin subproject như
+# `:geolocator_android` - nên dòng `compileSdk flutter.compileSdkVersion` trong build.gradle của
+# chính geolocator_android 4.6.2 fail với "Could not get unknown property 'flutter'". Đây là bug
+# đã được báo cáo thật trên repo Baseflow/flutter-geolocator (issue #1665, #1666, #1673 - đều
+# đúng bản 4.6.2 + Flutter 3.24.x) - không phải lỗi cấu hình của project này.
+#
+# Đã loại các phương án khác trước khi chọn cách này (đúng thứ tự ưu tiên yêu cầu sửa lỗi):
+# 1. Upgrade geolocator/geolocator_android lên bản mới - KHÔNG AN TOÀN: bản 5.0.0 có
+#    android/build.gradle giống hệt 4.6.2 (không sửa lỗi này), và bản 5.0.3 (bản có sửa thật)
+#    chỉ đi kèm `geolocator ^14.0.0`, mà changelog của geolocator 14.0.0 ghi rõ BREAKING CHANGE
+#    yêu cầu Flutter SDK ≥3.29 - xác nhận qua thử nghiệm: `flutter test` fail biên dịch thật vì
+#    API `Color.toARGB32()` chỉ có ở Flutter ≥3.27, dự án đang pin Flutter 3.24.5.
+# 2. Nâng AGP/Gradle - không cần thiết vì đã tìm ra nguyên nhân chính xác (không phải version
+#    mismatch AGP/Gradle) và cách 3 (pin xuống bản trước khi có regression) là fix nhỏ nhất, an
+#    toàn nhất, không đổi kiến trúc Android của project.
+# 3. Pin geolocator_android xuống 4.6.1 (bản ngay trước khi regression xuất hiện) - ĐÃ CHỌN.
+#    compileSdk 34/minSdkVersion 16 hard-code trong 4.6.1 tương thích hoàn toàn với compileSdk 34/
+#    minSdk 21 mà project đang dùng (minSdk plugin thấp hơn minSdk app luôn hợp lệ). API Dart
+#    không đổi giữa 4.6.1/4.6.2 (chỉ khác Gradle) nên không có breaking change nào ở tầng Flutter/
+#    Dart - `flutter analyze`/`flutter test` (56/56) xác nhận không có API nào bị ảnh hưởng.
+dependency_overrides:
+  geolocator_android: 4.6.1
+
 flutter:
   uses-material-design: true

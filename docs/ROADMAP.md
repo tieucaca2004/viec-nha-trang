@@ -71,15 +71,19 @@ phase, per explicit instruction not to expand scope without asking. Nothing here
   but it's still new attack surface that didn't exist before this phase — worth a second set of
   eyes before this code goes anywhere near a real deployment, even though it's guarded.
 
-## Found during FULL AUDIT remediation (real GitHub Actions run, not sandbox)
+## Resolved after FULL AUDIT remediation (real GitHub Actions run, not sandbox)
 
-- **`flutter build apk --debug` fails on real CI with a real Android SDK** (confirmed via GitHub
-  Actions run 32045998356, not the sandbox's usual "no SDK" limitation) — `geolocator_android
-  4.6.2`'s own `android/build.gradle` (third-party code in `.pub-cache`, not this project's code)
-  is incompatible with the current Flutter Gradle Plugin loading mechanism. The real fix
-  (`geolocator_android 5.0.3`) only ships bundled with `geolocator ^14.0.0`, which requires
-  Flutter SDK ≥3.29 per its changelog — confirmed by trying a `dependency_overrides` workaround,
-  which got past `pub get` but failed to compile (`Color.toARGB32()` needs Flutter ≥3.27,
-  project is pinned to 3.24.5). Upgrading the Flutter SDK (local + CI) is out of scope for the
-  audit-remediation pass that found this — it's a real toolchain decision that needs its own
-  review, not a quick patch. See `docs/BUILD.md` for the full trace and both real fix options.
+- **`flutter build apk --debug` failed on real CI with a real Android SDK** (first found via
+  GitHub Actions run 32045998356) — `geolocator_android 4.6.2`'s own `android/build.gradle`
+  (third-party code in `.pub-cache`, not this project's code) was incompatible with the current
+  Flutter Gradle Plugin loading mechanism (`flutter.compileSdkVersion` not resolvable on plugin
+  subprojects). **Fixed** by pinning `geolocator_android: 4.6.1` (the last version before the
+  regression) via `dependency_overrides` in `apps/mobile/pubspec.yaml` — confirmed via direct
+  Gradle-file diffing that 4.6.1 is Gradle-compatible and has no Dart/API differences from 4.6.2,
+  and confirmed that upgrading instead is not a safe option under the project's pinned Flutter
+  3.24.5 (the real upstream fix, `geolocator_android 5.0.3`, only ships with `geolocator ^14.0.0`,
+  which requires Flutter SDK ≥3.29 per its changelog — verified by a failed compile attempt of
+  `Color.toARGB32()`, an API that doesn't exist before Flutter 3.27). No geolocator removal, no
+  GPS feature removal, no CI changes, no architecture changes. See `docs/BUILD.md` for the full
+  trace. Upgrading the project's Flutter SDK to unlock the newer `geolocator`/`geolocator_android`
+  properly remains a legitimate future toolchain decision, but is no longer blocking the build.
