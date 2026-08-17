@@ -1,0 +1,594 @@
+// VIỆC NHA TRANG — Database schema (V1 MVP)
+// Thiết kế đa khu vực ngay từ đầu (đặc tả mục 31): cities -> areas.
+// V1 chỉ seed thành phố Nha Trang, nhưng schema không hard-code Nha Trang.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Đa khu vực (mục 31) ----------
+
+model City {
+  id        String   @id @default(uuid())
+  name      String   @unique // vd: "Nha Trang"
+  slug      String   @unique // vd: "nha-trang"
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  areas             Area[]
+  employerLocations EmployerLocation[]
+  jobs              Job[]
+
+  @@map("cities")
+}
+
+model Area {
+  id        String   @id @default(uuid())
+  cityId    String   @map("city_id")
+  name      String // vd: "Vĩnh Hải"
+  slug      String
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  city               City               @relation(fields: [cityId], references: [id])
+  employerLocations  EmployerLocation[]
+  jobs               Job[]
+  jobSeekerProfiles  JobSeekerProfile[]
+
+  @@unique([cityId, slug])
+  @@index([cityId])
+  @@map("areas")
+}
+
+// ---------- Tài khoản & vai trò (mục 5) ----------
+
+enum UserRole {
+  JOB_SEEKER
+  EMPLOYER
+  ADMIN
+}
+
+enum AuthProvider {
+  PHONE
+  GOOGLE
+  APPLE
+}
+
+model User {
+  id            String     @id @default(uuid())
+  phone         String?    @unique
+  email         String?    @unique
+  passwordHash  String?    @map("password_hash") // chỉ dùng nếu cần fallback, V1 chủ yếu OTP/OAuth
+  roles         UserRole[] @default([JOB_SEEKER])
+  authProvider  AuthProvider @default(PHONE) @map("auth_provider")
+  isPhoneVerified Boolean  @default(false) @map("is_phone_verified")
+  isActive      Boolean    @default(true) @map("is_active")
+  isBanned      Boolean    @default(false) @map("is_banned")
+  bannedReason  String?    @map("banned_reason")
+  lastLoginAt   DateTime?  @map("last_login_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  deletedAt     DateTime?  @map("deleted_at")
+
+  jobSeekerProfile JobSeekerProfile?
+  employerProfile  EmployerProfile?
+  refreshTokens    RefreshToken[]
+  otpCodes         OtpCode[]
+  notifications    Notification[]
+  savedJobs        SavedJob[]
+  reportsFiled     Report[]          @relation("ReportsFiledByUser")
+  auditLogs        AuditLog[]
+  reviewsWritten   Review[]          @relation("ReviewsWrittenByUser")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model OtpCode {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  phone     String
+  codeHash  String   @map("code_hash")
+  attempts  Int      @default(0)
+  expiresAt DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([phone])
+  @@map("otp_codes")
+}
+
+// ---------- Hồ sơ người tìm việc (mục 12) ----------
+
+enum ExperienceLevel {
+  NONE
+  UNDER_1_YEAR
+  ONE_TO_3_YEARS
+  OVER_3_YEARS
+}
+
+enum ShiftPreference {
+  MORNING
+  AFTERNOON
+  EVENING
+  NIGHT
+  FLEXIBLE
+}
+
+model JobSeekerProfile {
+  id                  String            @id @default(uuid())
+  userId              String            @unique @map("user_id")
+  fullName            String            @map("full_name")
+  avatarUrl           String?           @map("avatar_url")
+  areaId              String?           @map("area_id")
+  latitude            Float?
+  longitude           Float?
+  desiredCategoryId   String?           @map("desired_category_id")
+  experienceLevel     ExperienceLevel   @default(NONE) @map("experience_level")
+  skills              String[]          @default([])
+  shiftPreferences    ShiftPreference[] @default([])
+  desiredSalaryMin    Int?              @map("desired_salary_min")
+  desiredSalaryMax    Int?              @map("desired_salary_max")
+  salaryUnit          SalaryUnit?       @map("salary_unit")
+  isLookingNow        Boolean           @default(false) @map("is_looking_now") // "Tôi đang cần việc ngay"
+  isSeeking           Boolean           @default(true) @map("is_seeking") // trạng thái "Đang tìm việc"
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  user             User          @relation(fields: [userId], references: [id])
+  area             Area?         @relation(fields: [areaId], references: [id])
+  desiredCategory  JobCategory?  @relation(fields: [desiredCategoryId], references: [id])
+  applications     Application[]
+  reviewsReceived  Review[]      @relation("ReviewsAboutJobSeeker")
+
+  @@index([areaId])
+  @@index([desiredCategoryId])
+  @@map("job_seeker_profiles")
+}
+
+// ---------- Nhà tuyển dụng (mục 20) ----------
+
+enum VerificationLevel {
+  UNVERIFIED
+  PHONE_VERIFIED
+  BUSINESS_VERIFIED
+  TRUSTED
+}
+
+model EmployerProfile {
+  id                String            @id @default(uuid())
+  userId            String            @unique @map("user_id")
+  businessName      String            @map("business_name")
+  logoUrl           String?           @map("logo_url")
+  description       String?
+  verificationLevel VerificationLevel @default(UNVERIFIED) @map("verification_level")
+  ratingAvg         Float             @default(0) @map("rating_avg")
+  ratingCount       Int               @default(0) @map("rating_count")
+  hiredCount        Int               @default(0) @map("hired_count")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  user      User               @relation(fields: [userId], references: [id])
+  locations EmployerLocation[]
+  jobs      Job[]
+  subscriptions Subscription[]
+  reviewsReceived Review[] @relation("ReviewsAboutEmployer")
+
+  @@map("employer_profiles")
+}
+
+model EmployerLocation {
+  id         String   @id @default(uuid())
+  employerId String   @map("employer_id")
+  name       String // tên cơ sở, vd "Hủ Tiếu Xào A Tiểu - CN Vĩnh Hải"
+  address    String
+  cityId     String   @map("city_id")
+  areaId     String   @map("area_id")
+  latitude   Float
+  longitude  Float
+  phone      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+  deletedAt  DateTime? @map("deleted_at")
+
+  employer EmployerProfile @relation(fields: [employerId], references: [id])
+  city     City            @relation(fields: [cityId], references: [id])
+  area     Area            @relation(fields: [areaId], references: [id])
+  jobs     Job[]
+
+  @@index([employerId])
+  @@index([areaId])
+  @@map("employer_locations")
+}
+
+// ---------- Danh mục ngành nghề ----------
+
+model JobCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique // Phục vụ, Phụ bếp, Đầu bếp, Thu ngân, Pha chế, ...
+  slug      String   @unique
+  icon      String?
+  sortOrder Int      @default(0) @map("sort_order")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jobs                     Job[]
+  jobSeekerDesiredProfiles JobSeekerProfile[]
+
+  @@map("job_categories")
+}
+
+// ---------- Tin tuyển dụng (mục 6, 10, 13) ----------
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  SHIFT_BASED
+  SEASONAL
+}
+
+enum SalaryUnit {
+  HOUR
+  DAY
+  MONTH
+  SHIFT
+}
+
+enum StartUrgency {
+  IMMEDIATE
+  WITHIN_3_DAYS
+  WITHIN_7_DAYS
+  NOT_URGENT
+}
+
+enum RequiredExperience {
+  NOT_REQUIRED
+  PREFERRED
+  REQUIRED
+}
+
+enum JobStatus {
+  DRAFT
+  PENDING_REVIEW
+  ACTIVE
+  PAUSED
+  CLOSED
+  EXPIRED
+  REJECTED
+}
+
+model Job {
+  id                 String             @id @default(uuid())
+  employerId         String             @map("employer_id")
+  employerLocationId String             @map("employer_location_id")
+  categoryId         String             @map("category_id")
+  cityId             String             @map("city_id")
+  areaId             String             @map("area_id")
+  latitude           Float
+  longitude          Float
+  title              String
+  description        String?
+  requirements       String?
+  benefits           String?
+  headcount          Int                @default(1)
+  employmentType     EmploymentType     @map("employment_type")
+  shifts             ShiftPreference[]  @default([])
+  shiftStartTime     String?            @map("shift_start_time") // "17:00"
+  shiftEndTime       String?            @map("shift_end_time") // "22:00"
+  salaryMin          Int                @map("salary_min")
+  salaryMax          Int                @map("salary_max")
+  salaryUnit         SalaryUnit         @map("salary_unit")
+  startUrgency       StartUrgency       @default(NOT_URGENT) @map("start_urgency")
+  requiredExperience RequiredExperience @default(NOT_REQUIRED) @map("required_experience")
+  isUrgent           Boolean            @default(false) @map("is_urgent") // 🔥 tuyển gấp (mục 26, có thể trả phí)
+  isBoosted          Boolean            @default(false) @map("is_boosted") // đẩy tin
+  boostedUntil       DateTime?          @map("boosted_until")
+  status             JobStatus          @default(ACTIVE)
+  viewCount          Int                @default(0) @map("view_count")
+  applicationCount   Int                @default(0) @map("application_count")
+  contactedCount     Int                @default(0) @map("contacted_count")
+  interviewCount     Int                @default(0) @map("interview_count")
+  hiredCount         Int                @default(0) @map("hired_count")
+  publishedAt        DateTime?          @map("published_at")
+  expiresAt          DateTime?          @map("expires_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+  deletedAt          DateTime?          @map("deleted_at")
+
+  employer         EmployerProfile   @relation(fields: [employerId], references: [id])
+  employerLocation EmployerLocation  @relation(fields: [employerLocationId], references: [id])
+  category         JobCategory       @relation(fields: [categoryId], references: [id])
+  city             City              @relation(fields: [cityId], references: [id])
+  area             Area              @relation(fields: [areaId], references: [id])
+  applications     Application[]
+  savedBy          SavedJob[]
+  reports          Report[]          @relation("ReportsOnJob")
+
+  @@index([areaId, status])
+  @@index([categoryId, status])
+  @@index([employerId])
+  @@map("jobs")
+}
+
+// ---------- Ứng tuyển (mục 11, 16) ----------
+
+enum ApplicationStatus {
+  NEW
+  VIEWED
+  CONTACTED
+  INTERVIEW
+  HIRED
+  NOT_SUITABLE
+  NO_SHOW
+}
+
+model Application {
+  id            String            @id @default(uuid())
+  jobId         String            @map("job_id")
+  jobSeekerId   String            @map("job_seeker_id")
+  status        ApplicationStatus @default(NEW)
+  matchScore    Int?              @map("match_score") // 0-100, mục 19
+  employerNote  String?           @map("employer_note")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  job       Job              @relation(fields: [jobId], references: [id])
+  jobSeeker JobSeekerProfile @relation(fields: [jobSeekerId], references: [id])
+
+  @@unique([jobId, jobSeekerId])
+  @@index([jobSeekerId])
+  @@index([jobId, status])
+  @@map("applications")
+}
+
+model SavedJob {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  jobId     String   @map("job_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+  job  Job  @relation(fields: [jobId], references: [id])
+
+  @@unique([userId, jobId])
+  @@map("saved_jobs")
+}
+
+// ---------- Đánh giá (mục 23) ----------
+
+enum ReviewerType {
+  JOB_SEEKER // đánh giá employer
+  EMPLOYER // đánh giá job_seeker
+}
+
+model Review {
+  id              String       @id @default(uuid())
+  reviewerType    ReviewerType @map("reviewer_type")
+  reviewerUserId  String       @map("reviewer_user_id")
+  employerId      String?      @map("employer_id") // set khi reviewerType = JOB_SEEKER
+  jobSeekerId     String?      @map("job_seeker_id") // set khi reviewerType = EMPLOYER
+  applicationId   String?      @map("application_id") // gắn với 1 lần tuyển dụng cụ thể để xác nhận đã làm việc
+  rating          Int // 1-5
+  criteriaScores  Json?        @map("criteria_scores") // vd { "salary_as_promised": 5, "on_time_payment": 4, ... }
+  comment         String?
+  isFlagged       Boolean      @default(false) @map("is_flagged")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  reviewerUser User             @relation("ReviewsWrittenByUser", fields: [reviewerUserId], references: [id])
+  employer     EmployerProfile? @relation("ReviewsAboutEmployer", fields: [employerId], references: [id])
+  jobSeeker    JobSeekerProfile? @relation("ReviewsAboutJobSeeker", fields: [jobSeekerId], references: [id])
+  reports      Report[]         @relation("ReportsOnReview")
+
+  @@index([employerId])
+  @@index([jobSeekerId])
+  @@map("reviews")
+}
+
+// ---------- Báo cáo (mục 22) ----------
+
+enum ReportTargetType {
+  JOB
+  REVIEW
+  USER
+}
+
+enum ReportReason {
+  FAKE_JOB
+  SCAM
+  WRONG_SALARY
+  WRONG_LOCATION
+  MISMATCHED_DESCRIPTION
+  CHARGES_FEE_FROM_CANDIDATE
+  INAPPROPRIATE_CONTENT
+  SPAM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+model Report {
+  id            String           @id @default(uuid())
+  reporterId    String           @map("reporter_id")
+  targetType    ReportTargetType @map("target_type")
+  jobId         String?          @map("job_id")
+  reviewId      String?          @map("review_id")
+  targetUserId  String?          @map("target_user_id")
+  reason        ReportReason
+  note          String?
+  status        ReportStatus     @default(OPEN)
+  resolvedNote  String?          @map("resolved_note")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  reporter User    @relation("ReportsFiledByUser", fields: [reporterId], references: [id])
+  job      Job?    @relation("ReportsOnJob", fields: [jobId], references: [id])
+  review   Review? @relation("ReportsOnReview", fields: [reviewId], references: [id])
+
+  @@index([status])
+  @@map("reports")
+}
+
+// ---------- Thông báo (mục 17) ----------
+
+enum NotificationType {
+  NEW_MATCHING_JOB
+  NEARBY_JOB
+  NEW_APPLICATION
+  APPLICATION_VIEWED
+  APPLICATION_STATUS_CHANGED
+  JOB_EXPIRING_SOON
+  SAVED_JOB_EXPIRING
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}
+
+// ---------- Gói trả phí & thanh toán (mục 27, 28) ----------
+
+enum PackageType {
+  FEATURED_JOB
+  BOOST_JOB
+  URGENT_JOB
+  MONTHLY_PLAN
+}
+
+model Package {
+  id          String      @id @default(uuid())
+  type        PackageType
+  name        String
+  description String?
+  priceVnd    Int         @map("price_vnd")
+  durationDays Int?       @map("duration_days")
+  isActive    Boolean     @default(true) @map("is_active")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  subscriptions Subscription[]
+
+  @@map("packages")
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+model Subscription {
+  id         String             @id @default(uuid())
+  employerId String             @map("employer_id")
+  packageId  String             @map("package_id")
+  jobId      String?            @map("job_id") // null nếu là gói tháng áp dụng toàn tài khoản
+  status     SubscriptionStatus @default(PENDING)
+  startsAt   DateTime?          @map("starts_at")
+  endsAt     DateTime?          @map("ends_at")
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  employer EmployerProfile @relation(fields: [employerId], references: [id])
+  package  Package         @relation(fields: [packageId], references: [id])
+  payments Payment[]
+
+  @@map("subscriptions")
+}
+
+enum PaymentProviderType {
+  VNPAY
+  MOMO
+  ZALOPAY
+  APPLE_IAP
+  GOOGLE_IAP
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
+model Payment {
+  id             String              @id @default(uuid())
+  subscriptionId String              @map("subscription_id")
+  provider       PaymentProviderType
+  amountVnd      Int                 @map("amount_vnd")
+  status         PaymentStatus       @default(PENDING)
+  providerTxnId  String?             @map("provider_txn_id")
+  rawResponse    Json?               @map("raw_response")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@map("payments")
+}
+
+// ---------- Cấu hình hệ thống & audit (mục 29, 30, 32) ----------
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?  @map("actor_id")
+  action     String // vd "job.approve", "employer.verify", "user.ban"
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}

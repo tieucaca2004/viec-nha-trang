@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Backend (NestJS)
+apps/backend/dist/
+apps/backend/.env
+apps/backend/.env.*.local
+
+# Admin (Next.js)
+apps/admin/.next/
+apps/admin/out/
+apps/admin/.env
+apps/admin/.env.*.local
+
+# Mobile (Flutter)
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/.packages
+apps/mobile/build/
+apps/mobile/ios/Pods/
+apps/mobile/ios/.symlinks/
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+apps/mobile/*.iml
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+*.log
