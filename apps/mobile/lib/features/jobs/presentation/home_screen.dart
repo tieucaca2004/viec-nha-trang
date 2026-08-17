@@ -6,6 +6,7 @@ import '../../../core/network/api_exception.dart';
 import '../../../shared/models/job.dart';
 import '../../../shared/widgets/async_state_view.dart';
 import '../../applications/data/applications_service.dart';
+import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
 import 'job_detail_screen.dart';
 import 'widgets/job_card.dart';
@@ -32,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   ApiException? _error;
   String? _activeQuickFilter;
   Set<String> _appliedJobIds = {};
+  Set<String> _savedJobIds = {};
   List<JobCategory> _categories = [];
   List<Area> _areas = [];
 
@@ -42,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadFilterOptions();
     _loadAppliedIds();
+    _loadSavedIds();
     _load();
   }
 
@@ -75,6 +78,38 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() => _appliedJobIds = applications.map((a) => a.job?.id).whereType<String>().toSet());
     } catch (_) {
       // Không chặn trang chủ nếu không tải được danh sách đã ứng tuyển.
+    }
+  }
+
+  Future<void> _loadSavedIds() async {
+    try {
+      final saved = await context.read<SavedJobsService>().listSaved();
+      if (!mounted) return;
+      setState(() => _savedJobIds = saved.map((s) => (s as Map)['jobId']?.toString()).whereType<String>().toSet());
+    } catch (_) {
+      // Không chặn trang chủ nếu không tải được danh sách đã lưu - nút lưu vẫn hoạt động,
+      // chỉ là trạng thái hiển thị ban đầu có thể chưa chính xác cho tới lần tải lại kế tiếp.
+    }
+  }
+
+  Future<void> _toggleSave(Job job) async {
+    final wasSaved = _savedJobIds.contains(job.id);
+    setState(() {
+      _savedJobIds = wasSaved ? ({..._savedJobIds}..remove(job.id)) : {..._savedJobIds, job.id};
+    });
+    try {
+      final savedJobsService = context.read<SavedJobsService>();
+      if (wasSaved) {
+        await savedJobsService.unsave(job.id);
+      } else {
+        await savedJobsService.save(job.id);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _savedJobIds = wasSaved ? {..._savedJobIds, job.id} : ({..._savedJobIds}..remove(job.id));
+      });
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
     }
   }
 
@@ -183,6 +218,8 @@ class _HomeScreenState extends State<HomeScreen> {
       _filters.employmentType = result.employmentType;
       _filters.shift = result.shift;
       _filters.startUrgency = result.startUrgency;
+      _filters.salaryMin = result.salaryMin;
+      _filters.salaryMax = result.salaryMax;
       _activeQuickFilter = null;
     });
     await _load();
@@ -295,10 +332,15 @@ class _HomeScreenState extends State<HomeScreen> {
             return JobCard(
               job: job,
               isApplied: _appliedJobIds.contains(job.id),
+              isSaved: _savedJobIds.contains(job.id),
               onTap: () => Navigator.of(context)
                   .push(MaterialPageRoute(builder: (_) => JobDetailScreen(jobId: job.id)))
-                  .then((_) => _loadAppliedIds()),
+                  .then((_) {
+                _loadAppliedIds();
+                _loadSavedIds();
+              }),
               onApply: () => _apply(job),
+              onToggleSave: () => _toggleSave(job),
             );
           },
         ),

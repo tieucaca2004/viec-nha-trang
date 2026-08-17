@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotImplementedException, UnauthorizedE
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Inject } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsProvider } from '../common/interfaces/sms-provider.interface';
 import { SMS_PROVIDER } from '../common/services/tokens';
@@ -98,6 +99,30 @@ export class AuthService {
     return this.issueTokens(user.id, user.roles);
   }
 
+  // Sửa lỗi High #7 (FULL AUDIT): trước đây "đăng xuất" chỉ xoá token phía client, refresh token
+  // vẫn còn hợp lệ trên server. Ở đây thu hồi (revokedAt) đúng hàng refresh token đang dùng -
+  // idempotent thật: token không tồn tại/đã revoke/hết hạn/không parse được đều trả về thành
+  // công (không throw), vì kết quả cuối cùng người gọi mong muốn ("token này không dùng được
+  // nữa") đã đúng trong mọi trường hợp đó.
+  async logout(refreshToken: string): Promise<{ success: true }> {
+    let payload: { sub: string };
+    try {
+      payload = this.jwt.verify(refreshToken, { secret: this.config.get('JWT_REFRESH_SECRET') });
+    } catch {
+      return { success: true };
+    }
+
+    const tokenRows = await this.prisma.refreshToken.findMany({
+      where: { userId: payload.sub, revokedAt: null },
+    });
+    const matching = tokenRows.find((row) => verifyHash(refreshToken, row.tokenHash));
+    if (matching) {
+      await this.prisma.refreshToken.update({ where: { id: matching.id }, data: { revokedAt: new Date() } });
+    }
+
+    return { success: true };
+  }
+
   async loginWithGoogle(_idToken: string): Promise<never> {
     // Điểm mở rộng: xác thực idToken qua Google, tìm/tạo user theo email, issueTokens().
     throw new NotImplementedException('Đăng nhập Google sẽ được bật ở bản phát hành sau.');
@@ -113,8 +138,13 @@ export class AuthService {
       { sub: userId, roles },
       { secret: this.config.get('JWT_ACCESS_SECRET'), expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN') },
     );
+    // jti ngẫu nhiên: đảm bảo 2 phiên đăng nhập của cùng 1 user trong cùng 1 giây (2 thiết bị,
+    // hoặc test chạy nhanh) không sinh ra 2 JWT giống hệt nhau byte-for-byte (payload+iat+exp
+    // trùng => token trùng). Nếu không có jti, logout 1 phiên có thể vô tình làm mất hiệu lực
+    // (hoặc bỏ sót thu hồi) phiên còn lại vì chúng thực chất là cùng 1 chuỗi token - phát hiện
+    // khi viết test cho High fix #7.
     const refreshToken = this.jwt.sign(
-      { sub: userId },
+      { sub: userId, jti: randomUUID() },
       { secret: this.config.get('JWT_REFRESH_SECRET'), expiresIn: this.config.get('JWT_REFRESH_EXPIRES_IN') },
     );
 

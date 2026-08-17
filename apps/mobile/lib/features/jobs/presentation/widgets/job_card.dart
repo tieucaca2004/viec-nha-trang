@@ -7,10 +7,20 @@ import '../../../../shared/models/job.dart';
 class JobCard extends StatelessWidget {
   final Job job;
   final bool isApplied;
+  final bool isSaved;
   final VoidCallback onTap;
   final VoidCallback onApply;
+  final VoidCallback? onToggleSave;
 
-  const JobCard({super.key, required this.job, required this.onTap, required this.onApply, this.isApplied = false});
+  const JobCard({
+    super.key,
+    required this.job,
+    required this.onTap,
+    required this.onApply,
+    this.isApplied = false,
+    this.isSaved = false,
+    this.onToggleSave,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +48,15 @@ class JobCard extends StatelessWidget {
                     const Padding(
                       padding: EdgeInsets.only(left: 6),
                       child: Text('🔥 Tuyển gấp', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                    ),
+                  if (onToggleSave != null)
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      visualDensity: VisualDensity.compact,
+                      icon: Icon(isSaved ? Icons.bookmark : Icons.bookmark_border, color: isSaved ? Colors.orange : Colors.black45),
+                      tooltip: isSaved ? 'Bỏ lưu việc này' : 'Lưu việc này',
+                      onPressed: onToggleSave,
                     ),
                 ],
               ),

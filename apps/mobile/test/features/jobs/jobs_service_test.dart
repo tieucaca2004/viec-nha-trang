@@ -60,5 +60,39 @@ void main() {
       expect(original.keyword, 'a');
       expect(copy.keyword, 'b');
     });
+
+    test('sends salaryMin/salaryMax as real query params (sửa lỗi High #9 FULL AUDIT)', () async {
+      final session = Session(storage: InMemoryTokenStorage());
+      late Uri capturedUri;
+      final api = ApiClient(
+        session,
+        httpClient: MockClient((request) async {
+          capturedUri = request.url;
+          return jsonResponse({
+            'data': <dynamic>[],
+            'meta': {'total': 0, 'limit': 20, 'offset': 0},
+          }, 200);
+        }),
+      );
+
+      final filters = JobFilters()
+        ..salaryMin = 25000
+        ..salaryMax = 50000;
+
+      await JobsService(api).search(filters, limit: 20, offset: 0);
+
+      expect(capturedUri.queryParameters['salaryMin'], '25000');
+      expect(capturedUri.queryParameters['salaryMax'], '50000');
+    });
+
+    test('JobFilters.copy() carries salaryMin/salaryMax independently', () {
+      final original = JobFilters()
+        ..salaryMin = 20000
+        ..salaryMax = 40000;
+      final copy = original.copy()..salaryMax = 60000;
+      expect(original.salaryMax, 40000);
+      expect(copy.salaryMin, 20000);
+      expect(copy.salaryMax, 60000);
+    });
   });
 }

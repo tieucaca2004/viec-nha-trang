@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser, AuthenticatedUser } from '../common/decorators/current-user.decorator';
@@ -26,9 +27,14 @@ export class JobsController {
     return this.jobsService.listByEmployer(user.userId);
   }
 
+  // Public endpoint nhưng vẫn nhận diện người gọi NẾU có đăng nhập (chủ tin/admin cần xem job
+  // không ACTIVE) - OptionalJwtAuthGuard không throw khi thiếu/token không hợp lệ (đặc tả mục 4
+  // của yêu cầu sửa Critical: job không ACTIVE không được public, chỉ owner/admin xem được).
+  @ApiBearerAuth()
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.jobsService.findOne(id);
+  findOne(@CurrentUser() user: AuthenticatedUser | undefined, @Param('id') id: string) {
+    return this.jobsService.findOne(id, user?.userId, user?.roles);
   }
 
   @ApiBearerAuth()

@@ -10,6 +10,11 @@ phase, per explicit instruction not to expand scope without asking. Nothing here
   no implementation.
 - Google Sign-In / Apple Sign-In (mục 5) — stub methods throw `NotImplementedException`.
 - Advanced maps (map view of nearby jobs, mục 18) — only lat/lng + haversine distance today.
+- Interactive map picker for employer location (tap-on-map coordinate selection) — the FULL
+  AUDIT remediation pass removed the hard-coded Nha Trang center coordinates and added real GPS +
+  manual lat/lng entry as functioning alternatives (see `docs/MOBILE.md` "Audit remediation"),
+  but a `google_maps_flutter`-style interactive picker still requires a real Maps API key +
+  billing account that doesn't exist in this environment — same constraint as above.
 - Realtime chat, AI recommendation/matching beyond the current rule-based `MatchScoreService`.
 - Redis, Elasticsearch, microservices, Kubernetes, production deployment config.
 

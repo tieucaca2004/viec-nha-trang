@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Sửa lỗi Critical #2 (FULL AUDIT): manifest chính (dùng cho release, không chỉ debug/profile)
+         trước đây không khai báo quyền nào - app release sẽ không gọi được API và không xin được GPS.
+         Chỉ 2 quyền thực sự cần dùng, không thêm thừa. -->
+    <!-- ApiClient gọi backend qua HTTP/HTTPS trên mọi màn hình (đặc tả §4/§22). -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- geolocator dùng Geolocator.getCurrentPosition() cho "Gần tôi"/tính khoảng cách (đặc tả
+         §22/§10 gốc) - chỉ cần FINE, không dùng vị trí nền nên không xin ACCESS_BACKGROUND_LOCATION. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <application
         android:label="viec_nha_trang"
         android:name="${applicationName}"

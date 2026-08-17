@@ -31,5 +31,19 @@ class AuthService {
     await refreshMe();
   }
 
-  Future<void> logout() => session.logout();
+  /// Sửa lỗi High #7 (FULL AUDIT): trước đây chỉ xoá token cục bộ, refresh token vẫn hợp lệ trên
+  /// server. Gọi POST /auth/logout để thu hồi refresh token thật TRƯỚC khi xoá session cục bộ.
+  /// Best-effort: nếu request thất bại (mất mạng, server lỗi...) vẫn phải cho phép đăng xuất cục
+  /// bộ - không được chặn người dùng chỉ vì gọi API logout không thành công.
+  Future<void> logout() async {
+    final refreshToken = session.refreshToken;
+    if (refreshToken != null) {
+      try {
+        await api.post('/auth/logout', body: {'refreshToken': refreshToken});
+      } catch (_) {
+        // Không chặn đăng xuất cục bộ khi API logout thất bại - xem docstring ở trên.
+      }
+    }
+    await session.logout();
+  }
 }

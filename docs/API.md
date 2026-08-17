@@ -14,6 +14,7 @@ server-side qua `RolesGuard`, không tin role client tự khai — §34/§8).
 | POST | `/auth/otp/request` | — | Rate-limited (`OTP_REQUEST_THROTTLE_LIMIT`, mặc định 3/phút/IP) |
 | POST | `/auth/otp/verify` | — | Trả `accessToken`+`refreshToken`; rate-limited (mặc định 5/phút/IP) |
 | POST | `/auth/refresh` | — | Đổi refresh token cũ (bị revoke) lấy cặp token mới |
+| POST | `/auth/logout` | — | Thu hồi refresh token phía server (revoke); idempotent, không throw với token rác/hết hạn. Thêm khi sửa lỗi High #7 (FULL AUDIT) — trước đó "đăng xuất" chỉ xoá token phía client |
 | POST | `/auth/google` | — | Chưa implement — trả 501, xem `docs/ROADMAP.md` |
 | POST | `/auth/apple` | — | Chưa implement — trả 501, xem `docs/ROADMAP.md` |
 
@@ -42,9 +43,9 @@ server-side qua `RolesGuard`, không tin role client tự khai — §34/§8).
 
 | Method | Path | Auth | Ghi chú |
 |---|---|---|---|
-| GET | `/jobs` | — | Filter: keyword, categoryId, areaId, cityId, latitude/longitude/radiusKm, employmentType, shift, salaryUnit, salaryMin, isUrgent, startUrgency, sortBy; pagination `limit`/`offset`. `startUrgency` thêm ở Phase 3 (mobile filter §10) |
+| GET | `/jobs` | — | Filter: keyword, categoryId, areaId, cityId, latitude/longitude/radiusKm, employmentType, shift, salaryUnit, salaryMin, salaryMax, isUrgent, startUrgency, sortBy; pagination `limit`/`offset`. `startUrgency` thêm ở Phase 3 (mobile filter §10); `salaryMax` thêm khi sửa lỗi High #9 (FULL AUDIT — filter lương min/max ở mobile) |
 | GET | `/jobs/mine` | 🔒[EMPLOYER] | |
-| GET | `/jobs/:id` | — | Tăng `viewCount` |
+| GET | `/jobs/:id` | 🔒 (optional) | Tăng `viewCount` — chỉ khi người xem KHÔNG phải chủ tin. Job không `ACTIVE` chỉ owner/admin xem được, người khác nhận 404 (sửa lỗi Critical #4, FULL AUDIT) |
 | POST | `/jobs` | 🔒[EMPLOYER] | Lương (`salaryMin`/`salaryMax`/`salaryUnit`) bắt buộc — §21 |
 | PATCH | `/jobs/:id` | 🔒[EMPLOYER] | Chỉ chủ job mới sửa được (ownership check server-side) |
 | POST | `/jobs/:id/close` | 🔒[EMPLOYER] | |
@@ -72,7 +73,7 @@ server-side qua `RolesGuard`, không tin role client tự khai — §34/§8).
 
 | Method | Path | Auth | Ghi chú |
 |---|---|---|---|
-| POST | `/reviews` | 🔒 | Chặn nếu gắn `applicationId` mà status khác `HIRED` |
+| POST | `/reviews` | 🔒 | `applicationId` bắt buộc, phải thuộc đúng reviewer, và application phải ở trạng thái `HIRED` — trước đó `applicationId` optional nên có thể bypass kiểm tra bằng cách bỏ field này, đã sửa (Critical #5, FULL AUDIT). `employerId`/`jobSeekerId` server tự suy ra từ application, không nhận từ client |
 | GET | `/reviews?targetType=&targetId=` | 🔒 | |
 | POST | `/reports` | 🔒 | |
 

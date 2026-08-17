@@ -62,6 +62,7 @@ export class JobsService {
       ...(query.shift ? { shifts: { has: query.shift } } : {}),
       ...(query.salaryUnit ? { salaryUnit: query.salaryUnit } : {}),
       ...(query.salaryMin != null ? { salaryMax: { gte: query.salaryMin } } : {}),
+      ...(query.salaryMax != null ? { salaryMin: { lte: query.salaryMax } } : {}),
       ...(query.isUrgent ? { isUrgent: true } : {}),
       ...(query.startUrgency ? { startUrgency: query.startUrgency } : {}),
       ...(query.keyword
@@ -77,49 +78,87 @@ export class JobsService {
 
     const hasCoords = query.latitude != null && query.longitude != null;
 
+    // Sort theo khoảng cách cần haversine (không tính được trong SQL vì V1 không có PostGIS -
+    // xem docs/SCALABILITY.md), và filter theo radiusKm làm thay đổi tổng số kết quả sau khi lọc
+    // - cả hai trường hợp này bắt buộc phải lấy toàn bộ ứng viên rồi lọc/sắp xếp/phân trang trong
+    // ứng dụng. Ngược lại (sort theo lương hoặc mới nhất, không lọc bán kính) có thể - và PHẢI -
+    // sort + phân trang ngay ở DB để page 1 chứa đúng kết quả cao/thấp nhất, không phải sort sau
+    // khi đã cắt trang (bug đã sửa - xem FULL AUDIT mục 6/High).
+    const needsInMemorySortOrFilter =
+      (hasCoords && query.radiusKm != null) || (hasCoords && (query.sortBy === JobSortBy.DISTANCE || !query.sortBy));
+
+    if (!needsInMemorySortOrFilter) {
+      const orderBy: Prisma.JobOrderByWithRelationInput =
+        query.sortBy === JobSortBy.SALARY ? { salaryMax: 'desc' } : { publishedAt: 'desc' };
+
+      const [candidates, total] = await Promise.all([
+        this.prisma.job.findMany({
+          where,
+          include: { employer: true, category: true, area: true, employerLocation: true },
+          orderBy,
+          take: limit,
+          skip: offset,
+        }),
+        this.prisma.job.count({ where }),
+      ]);
+
+      const data = candidates.map((job) => ({
+        ...job,
+        distanceKm: hasCoords ? this.haversineKm(query.latitude!, query.longitude!, job.latitude, job.longitude) : null,
+      }));
+
+      return { data, meta: { total, limit, offset } };
+    }
+
     // Không PostGIS ở V1: lấy tập ứng viên rồi tính khoảng cách + sắp xếp trong ứng dụng.
     // Đủ dùng cho quy mô 1 thành phố; khi mở rộng đa thành phố sẽ thêm PostGIS/geo-index.
     const candidates = await this.prisma.job.findMany({
       where,
       include: { employer: true, category: true, area: true, employerLocation: true },
-      orderBy: query.sortBy === JobSortBy.NEWEST || !hasCoords ? { publishedAt: 'desc' } : undefined,
-      take: hasCoords ? undefined : limit,
-      skip: hasCoords ? undefined : offset,
     });
 
     let results = candidates.map((job) => ({
       ...job,
-      distanceKm: hasCoords
-        ? this.haversineKm(query.latitude!, query.longitude!, job.latitude, job.longitude)
-        : null,
+      distanceKm: this.haversineKm(query.latitude!, query.longitude!, job.latitude, job.longitude),
     }));
 
-    if (hasCoords && query.radiusKm) {
+    if (query.radiusKm) {
       results = results.filter((job) => (job.distanceKm ?? Infinity) <= query.radiusKm!);
     }
 
     if (query.sortBy === JobSortBy.SALARY) {
       results.sort((a, b) => b.salaryMax - a.salaryMax);
-    } else if (hasCoords && (query.sortBy === JobSortBy.DISTANCE || !query.sortBy)) {
+    } else {
       results.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
     }
 
     const total = results.length;
-    if (hasCoords) {
-      results = results.slice(offset, offset + limit);
-    }
+    results = results.slice(offset, offset + limit);
 
     return { data: results, meta: { total, limit, offset } };
   }
 
-  async findOne(id: string) {
+  // viewerId/viewerRoles đến từ OptionalJwtAuthGuard - undefined nếu người xem chưa đăng nhập.
+  // Job không ACTIVE (DRAFT/CLOSED/EXPIRED/...) chỉ được xem bởi chính chủ hoặc ADMIN, không public.
+  async findOne(id: string, viewerId?: string, viewerRoles?: string[]) {
     const job = await this.prisma.job.findUnique({
       where: { id },
       include: { employer: true, category: true, area: true, employerLocation: true },
     });
     if (!job || job.deletedAt) throw new NotFoundException('Không tìm thấy tin tuyển dụng.');
 
-    await this.prisma.job.update({ where: { id }, data: { viewCount: { increment: 1 } } });
+    const isOwner = viewerId != null && job.employer.userId === viewerId;
+    const isAdmin = viewerRoles?.includes('ADMIN') ?? false;
+
+    if (job.status !== 'ACTIVE' && !isOwner && !isAdmin) {
+      throw new NotFoundException('Không tìm thấy tin tuyển dụng.');
+    }
+
+    if (!isOwner) {
+      await this.prisma.job.update({ where: { id }, data: { viewCount: { increment: 1 } } });
+      job.viewCount += 1;
+    }
+
     return job;
   }
 

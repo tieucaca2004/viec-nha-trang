@@ -14,6 +14,8 @@ class JobFilters {
   bool? isUrgent;
   String? sortBy;
   String? startUrgency;
+  int? salaryMin;
+  int? salaryMax;
 
   Map<String, dynamic> toQuery() => {
         'keyword': keyword,
@@ -27,6 +29,8 @@ class JobFilters {
         'isUrgent': isUrgent,
         'sortBy': sortBy,
         'startUrgency': startUrgency,
+        'salaryMin': salaryMin,
+        'salaryMax': salaryMax,
       };
 
   JobFilters copy() => JobFilters()
@@ -40,7 +44,9 @@ class JobFilters {
     ..shift = shift
     ..isUrgent = isUrgent
     ..sortBy = sortBy
-    ..startUrgency = startUrgency;
+    ..startUrgency = startUrgency
+    ..salaryMin = salaryMin
+    ..salaryMax = salaryMax;
 }
 
 /// Kết quả tìm kiếm có phân trang (đặc tả §9: không tải toàn bộ jobs, dùng pagination).

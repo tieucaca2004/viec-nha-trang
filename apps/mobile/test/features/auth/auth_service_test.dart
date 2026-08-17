@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:viec_nha_trang/core/auth/session.dart';
 import 'package:viec_nha_trang/core/network/api_client.dart';
@@ -71,9 +72,34 @@ void main() {
       expect(session.isJobSeeker, isTrue); // vẫn giữ vai trò cũ - 1 tài khoản nhiều vai trò
     });
 
-    test('logout clears session tokens', () async {
+    test('logout calls POST /auth/logout with the refresh token THEN clears session tokens (đặc tả sửa lỗi High #7)', () async {
       final session = Session(storage: InMemoryTokenStorage());
-      final api = ApiClient(session);
+      String? calledPath;
+      Map<String, dynamic>? sentBody;
+      final api = ApiClient(
+        session,
+        httpClient: MockClient((request) async {
+          calledPath = request.url.path;
+          sentBody = jsonDecode(request.body);
+          return jsonResponse({'success': true}, 201);
+        }),
+      );
+      await session.setTokens(access: 'a', refresh: 'b');
+
+      await AuthService(api, session).logout();
+
+      expect(calledPath, endsWith('/auth/logout'));
+      expect(sentBody!['refreshToken'], 'b');
+      expect(session.isLoggedIn, isFalse);
+      expect(session.refreshToken, isNull);
+    });
+
+    test('logout still clears session tokens locally even if the API call fails (best-effort, no network block)', () async {
+      final session = Session(storage: InMemoryTokenStorage());
+      final api = ApiClient(
+        session,
+        httpClient: MockClient((request) async => http.Response('offline', 500)),
+      );
       await session.setTokens(access: 'a', refresh: 'b');
 
       await AuthService(api, session).logout();

@@ -6,6 +6,7 @@ import '../../../shared/widgets/async_state_view.dart';
 import '../../applications/data/applications_service.dart';
 import '../../profile/data/job_seeker_profile_service.dart';
 import '../../profile/presentation/job_seeker_profile_form_screen.dart';
+import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
 
 /// Trang chi tiết việc làm (đặc tả §11 Phase 3): mô tả, yêu cầu, quyền lợi,
@@ -24,6 +25,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool _loading = true;
   bool _applied = false;
   bool _applying = false;
+  bool _saved = false;
+  bool _togglingSave = false;
 
   @override
   void initState() {
@@ -38,13 +41,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     });
     final jobsService = context.read<JobsService>();
     final applicationsService = context.read<ApplicationsService>();
+    final savedJobsService = context.read<SavedJobsService>();
     try {
       final job = await jobsService.getById(widget.jobId);
       final applications = await applicationsService.listMine();
+      bool saved = false;
+      try {
+        final savedList = await savedJobsService.listSaved();
+        saved = savedList.any((s) => (s as Map)['jobId']?.toString() == widget.jobId);
+      } catch (_) {
+        // Không chặn trang chi tiết nếu không tải được danh sách đã lưu - nút lưu vẫn hoạt động,
+        // chỉ là trạng thái ban đầu có thể chưa chính xác.
+      }
       if (!mounted) return;
       setState(() {
         _job = job;
         _applied = applications.any((a) => a.job?.id == widget.jobId);
+        _saved = saved;
       });
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e);
@@ -107,6 +120,29 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
+  Future<void> _toggleSave() async {
+    if (_togglingSave) return;
+    final wasSaved = _saved;
+    setState(() {
+      _saved = !wasSaved;
+      _togglingSave = true;
+    });
+    try {
+      final savedJobsService = context.read<SavedJobsService>();
+      if (wasSaved) {
+        await savedJobsService.unsave(widget.jobId);
+      } else {
+        await savedJobsService.save(widget.jobId);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _saved = wasSaved);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+    } finally {
+      if (mounted) setState(() => _togglingSave = false);
+    }
+  }
+
   Future<void> _call(String? phone) async {
     if (phone == null) return;
     await launchUrl(Uri.parse('tel:$phone'));
@@ -120,7 +156,17 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_job?['title'] ?? 'Chi tiết công việc')),
+      appBar: AppBar(
+        title: Text(_job?['title'] ?? 'Chi tiết công việc'),
+        actions: [
+          if (_job != null)
+            IconButton(
+              icon: Icon(_saved ? Icons.bookmark : Icons.bookmark_border),
+              tooltip: _saved ? 'Bỏ lưu việc này' : 'Lưu việc này',
+              onPressed: _toggleSave,
+            ),
+        ],
+      ),
       body: AsyncStateView<Map<String, dynamic>>(
         loading: _loading,
         error: _error,

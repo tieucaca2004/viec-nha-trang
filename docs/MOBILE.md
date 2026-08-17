@@ -90,11 +90,11 @@ Cả hai xác nhận bằng `npm run test:e2e` (34/34 pass) sau khi sửa — xe
 | M1 Flutter foundation | ✅ | Cấu trúc `core/`+`features/`+`shared/` như trên |
 | M2 Authentication | ✅ | OTP thật, secure storage, session reactive |
 | M3 Seeker marketplace | ✅ | Search debounce 400ms, filter sheet, job detail, JobCard tối giản |
-| M4 Application flow | ✅ | 1-chạm apply, không trùng (unique constraint DB), tabs theo trạng thái, saved jobs |
+| M4 Application flow | ✅ | 1-chạm apply, không trùng (unique constraint DB), tabs theo trạng thái, saved jobs (save/unsave wire vào JobCard+JobDetail, sửa ở audit remediation — xem mục dưới) |
 | M5 Employer flow | ✅ | Wizard đăng tin 9 bước, quản lý tin theo trạng thái, quản lý ứng viên |
 | M6 Notifications | ⚠️ Một phần | Backend FCM đã có thật; mobile CHƯA init Firebase native — xem mục dưới |
 | M7 Location | ✅ | `geolocator`, permission không chặn app, fallback chọn khu vực thủ công |
-| M8 Testing | ✅ | 41 test (unit + widget), `flutter test` pass, `flutter analyze` 0 issue |
+| M8 Testing | ✅ | 56 test (unit + widget) sau audit remediation, `flutter test` pass, `flutter analyze` 0 issue |
 | M9 Android build | ⚠️ BLOCKED BY ENVIRONMENT | Xem `docs/BUILD.md` |
 | M10 iOS build | ⚠️ BLOCKED BY ENVIRONMENT | Sandbox Linux, không có Xcode — xem `docs/BUILD.md` |
 | M11 Docs/CI | ✅ | Tài liệu này + `docs/BUILD.md` + `docs/RELEASE.md` + CI |
@@ -119,6 +119,27 @@ Việc còn lại (ngoài phạm vi sandbox — cần Firebase Console + tài kh
 
 Màn hình danh sách thông báo (`NotificationsScreen`) đã hoạt động đầy đủ với dữ liệu backend
 thật (không phụ thuộc FCM native) — chỉ thiếu bước "nhận push khi app ở background/killed".
+
+## Audit remediation (sau FULL AUDIT lần 1, trước khi merge main)
+
+FULL AUDIT lần 1 phát hiện project ở mức ~60-65% hoàn thành V1, với 5 lỗi Critical và 6 lỗi High.
+Toàn bộ đã được sửa và có test thật xác nhận (không đánh dấu DONE khi chưa kiểm chứng):
+
+| # | Lỗi | Sửa | Test |
+|---|---|---|---|
+| Critical 1 | Không có cách lưu việc (chỉ unsave được) | Wire `SavedJobsService.save/unsave` thật vào `JobCard` (icon bookmark) và `JobDetailScreen` (AppBar action) | `job_card_test.dart`, `home_screen_save_test.dart` (screen-level, không chỉ widget rời) |
+| Critical 2 | `AndroidManifest.xml` chính không có quyền nào | Thêm `INTERNET` + `ACCESS_FINE_LOCATION`, không thêm thừa | Xác nhận XML hợp lệ; hành vi thật cần Android build (BLOCKED BY ENVIRONMENT, xem `docs/BUILD.md`) |
+| Critical 3 | iOS thiếu `NSLocationWhenInUseUsageDescription` | Thêm key với nội dung tiếng Việt rõ ràng | Xác nhận plist hợp lệ; hành vi thật cần iOS build (BLOCKED BY ENVIRONMENT) |
+| Critical 4 | `GET /jobs/:id` không kiểm tra status, `viewCount` tăng cả khi owner tự xem | `OptionalJwtAuthGuard` mới; chỉ ACTIVE mới public, owner/admin xem được non-ACTIVE (404 cho người khác, không phải 403 — tránh lộ tồn tại); không tăng view khi owner xem | `test/job-visibility.e2e-spec.ts` (7 test: ACTIVE/DRAFT/CLOSED/EXPIRED × anonymous/owner/admin/other-employer) |
+| Critical 5 | `POST /reviews` bypass được kiểm tra HIRED bằng cách bỏ `applicationId` | `applicationId` bắt buộc; ownership + trạng thái HIRED kiểm tra từ chính application; `employerId`/`jobSeekerId` server tự suy ra, không nhận từ client | `test/reviews.e2e-spec.ts` (6 test: thiếu applicationId/không tồn tại/của người khác/chưa HIRED/thành công/không spoof được employerId) |
+| High 6 | `sortBy=salary` sort sau khi đã phân trang ở DB (không có GPS) | Sort ở DB level (`orderBy: salaryMax desc`) trước `take/skip`, kèm `count()` riêng cho `total` | `test/job-search-sort.e2e-spec.ts` (12 job, kiểm tra đúng thứ tự trang 1/2, cả có/không GPS) |
+| High 7 | Không có logout phía server, refresh token cũ vẫn dùng được | `POST /auth/logout` revoke refresh token (idempotent, không throw với token rác); thêm `jti` ngẫu nhiên vào refresh JWT (phát hiện khi test: 2 phiên đăng nhập cùng giây trước đây sinh JWT trùng hệt nhau); mobile gọi API logout trước khi xoá session cục bộ (best-effort) | `test/logout.e2e-spec.ts` (5 test), `auth_service_test.dart` |
+| High 8 | Toạ độ cơ sở employer luôn hard-code trung tâm Nha Trang | Bỏ hard-code hoàn toàn; employer chọn GPS hiện tại (`geolocator`, cùng pattern non-blocking như seeker) hoặc tự nhập lat/lng; hiển thị xác nhận trước khi lưu; chặn lưu nếu chưa có vị trí. **Không** thêm Google Maps picker tương tác — đặc tả gốc §18/§37 cấm thêm Maps billing/config khi chưa có credentials thật trong môi trường này | `employer_business_setup_screen_test.dart` (3 test) |
+| High 9 | `JobFilterSheet` không có filter lương dù có trong đặc tả | Thêm `salaryMax` backend (optional, backward-compatible, cùng mẫu với `startUrgency` ở Phase 3); UI 2 ô nhập Từ/Đến trong filter sheet | Backend: `coverage-gaps.e2e-spec.ts`; Mobile: `job_filter_sheet_test.dart`, `jobs_service_test.dart` |
+
+Test mới thêm khi sửa: backend 34 → 69 test (9 file, tất cả pass ổn định qua nhiều lần chạy lặp
+lại); mobile 42 → 56 test. Không dùng mock để che lỗi thật — mọi fix đều có test xác nhận hành vi
+đúng, không phải chỉ test cho qua để build pass.
 
 ## Bảo mật
 

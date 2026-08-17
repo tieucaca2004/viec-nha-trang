@@ -31,12 +31,23 @@ class JobFilterSheet extends StatefulWidget {
 class _JobFilterSheetState extends State<JobFilterSheet> {
   late JobFilters _filters;
   double? _radiusKm;
+  late final TextEditingController _salaryMinController;
+  late final TextEditingController _salaryMaxController;
 
   @override
   void initState() {
     super.initState();
     _filters = widget.initial.copy();
     _radiusKm = _filters.radiusKm;
+    _salaryMinController = TextEditingController(text: _filters.salaryMin?.toString() ?? '');
+    _salaryMaxController = TextEditingController(text: _filters.salaryMax?.toString() ?? '');
+  }
+
+  @override
+  void dispose() {
+    _salaryMinController.dispose();
+    _salaryMaxController.dispose();
+    super.dispose();
   }
 
   @override
@@ -92,6 +103,26 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                               ))
                           .toList(),
                     ),
+                    _sectionTitle('Lương (đ)'),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _salaryMinController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Từ', border: OutlineInputBorder(), isDense: true),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextField(
+                            controller: _salaryMaxController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(labelText: 'Đến', border: OutlineInputBorder(), isDense: true),
+                          ),
+                        ),
+                      ],
+                    ),
                     _sectionTitle('Loại việc'),
                     Wrap(
                       spacing: 8,
@@ -145,6 +176,8 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                     child: FilledButton(
                       onPressed: () {
                         _filters.radiusKm = _radiusKm;
+                        _filters.salaryMin = int.tryParse(_salaryMinController.text.trim());
+                        _filters.salaryMax = int.tryParse(_salaryMaxController.text.trim());
                         Navigator.of(context).pop(_filters);
                       },
                       child: const Text('ÁP DỤNG'),

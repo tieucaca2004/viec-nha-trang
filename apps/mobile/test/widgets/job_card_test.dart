@@ -65,5 +65,40 @@ void main() {
       await tester.tap(find.text('PHỤC VỤ NHÀ HÀNG'));
       expect(tapped, isTrue);
     });
+
+    testWidgets('shows an outlined bookmark and calls onToggleSave when not saved (sửa lỗi Critical #1)', (tester) async {
+      var toggled = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: JobCard(job: _buildJob(), onTap: () {}, onApply: () {}, isSaved: false, onToggleSave: () => toggled = true),
+        ),
+      ));
+
+      expect(find.byIcon(Icons.bookmark_border), findsOneWidget);
+      expect(find.byIcon(Icons.bookmark), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.bookmark_border));
+      expect(toggled, isTrue);
+    });
+
+    testWidgets('shows a filled bookmark when already saved (sửa lỗi Critical #1)', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: JobCard(job: _buildJob(), onTap: () {}, onApply: () {}, isSaved: true, onToggleSave: () {}),
+        ),
+      ));
+
+      expect(find.byIcon(Icons.bookmark), findsOneWidget);
+      expect(find.byIcon(Icons.bookmark_border), findsNothing);
+    });
+
+    testWidgets('does not show a save button at all when onToggleSave is not provided', (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(body: JobCard(job: _buildJob(), onTap: () {}, onApply: () {})),
+      ));
+
+      expect(find.byIcon(Icons.bookmark), findsNothing);
+      expect(find.byIcon(Icons.bookmark_border), findsNothing);
+    });
   });
 }

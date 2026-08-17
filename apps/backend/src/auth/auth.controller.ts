@@ -38,6 +38,14 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  // Không cần JwtAuthGuard - chính refreshToken trong body là "credential" chứng minh quyền
+  // đăng xuất phiên đó (giống /auth/refresh). Idempotent: gọi lại nhiều lần, hoặc gọi với token
+  // đã hết hạn/không hợp lệ, đều trả 201 thành công (đặc tả sửa lỗi High #7).
+  @Post('logout')
+  logout(@Body() dto: RefreshTokenDto) {
+    return this.authService.logout(dto.refreshToken);
+  }
+
   @Post('google')
   google(@Body('idToken') idToken: string) {
     return this.authService.loginWithGoogle(idToken);

@@ -45,5 +45,10 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Sửa lỗi Critical #3 (FULL AUDIT): thiếu key này khiến app crash/fail khi geolocator xin
+	     quyền vị trí trên iOS thật (đặc tả §22/§10 gốc - "Gần tôi"/tính khoảng cách). Nội dung rõ
+	     ràng, giải thích đúng lý do dùng, không xin quyền "Always" (app không cần vị trí nền). -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>VIỆC NHA TRANG dùng vị trí của bạn để tìm việc làm gần bạn nhất và hiển thị khoảng cách tới nơi làm việc. Bạn có thể từ chối và tự chọn khu vực thay thế.</string>
 </dict>
 </plist>

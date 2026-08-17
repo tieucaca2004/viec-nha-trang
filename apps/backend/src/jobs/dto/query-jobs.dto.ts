@@ -59,6 +59,14 @@ export class QueryJobsDto {
   @IsNumber()
   salaryMin?: number;
 
+  // Bổ sung sửa lỗi High #9 (FULL AUDIT): mobile filter sheet cần lọc theo khoảng lương
+  // min/max, nhưng backend trước đó chỉ có salaryMin (chặn dưới). Thêm salaryMax optional,
+  // backward-compatible, không đổi hành vi field salaryMin hiện có.
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  salaryMax?: number;
+
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
