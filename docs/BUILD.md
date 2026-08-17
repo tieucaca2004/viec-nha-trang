@@ -36,27 +36,52 @@ flutter test        # PASS — 41/41 test, 11 file (test/)
 `flutter analyze` chạy trên toàn bộ `lib/` (không loại trừ file nào) và `flutter test` chạy
 toàn bộ `test/` — cả hai đều thật, không có bước nào bị skip hay mock để "cho qua".
 
-### ⚠️ BLOCKED BY ENVIRONMENT — Android build (M9)
+### ⚠️ BLOCKED BY ENVIRONMENT trong sandbox — nhưng chạy được trên CI thật, và CI thật phát hiện 1 lỗi thật (Android build, M9)
+
+Trong sandbox này (`flutter build apk --debug`) vẫn thất bại vì lý do y hệt Phase 3:
+`[!] No Android SDK found` — `flutter doctor -v` xác nhận, network policy sandbox chặn
+`dl.google.com` (xác nhận qua `$HTTPS_PROXY/__agentproxy/status`). Không đổi so với Phase 3.
+
+**Cập nhật quan trọng (audit remediation, xác nhận qua GitHub Actions thật ngày 2026-08-17,
+run [32045998356](https://github.com/tieucaca2004/viec-nha-trang/actions/runs/32045998356))**:
+CI's `ubuntu-latest` runner CÓ Android SDK thật (khác sandbox) — `flutter analyze` và
+`flutter test` (56/56) đều PASS thật trên CI, nhưng `flutter build apk --debug` **FAIL thật**,
+không phải vì thiếu SDK:
 
 ```
-flutter build apk --debug
+A problem occurred evaluating project ':geolocator_android'.
+> Could not get unknown property 'flutter' for extension 'android' of type LibraryExtension.
+...
+> compileSdkVersion is not specified. Please add it to build.gradle
 ```
 
-Kết quả: `[!] No Android SDK found. Try setting the ANDROID_HOME environment variable.`
+**Nguyên nhân xác nhận (không phải đoán)**: đây là bug thật của `geolocator_android 4.6.2`
+(kéo theo bởi `geolocator ^13.x` trong `pubspec.yaml`) — `android/build.gradle` của chính
+package đó (trong `.pub-cache`, không phải code của project này) đọc `flutter.compileSdkVersion`
+theo cách không tương thích với cơ chế nạp Flutter Gradle Plugin hiện tại. Đã thử fix thật: bản
+`geolocator_android 5.0.3` sửa đúng lỗi này, nhưng nó chỉ đến kèm `geolocator ^14.0.0`, và
+changelog của `geolocator 14.0.0` ghi rõ **BREAKING CHANGE: yêu cầu Flutter SDK ≥3.29** — thử
+override trực tiếp `dependency_overrides: geolocator_android: ^5.0.3` (giữ `geolocator ^13.x`)
+thì `flutter pub get` qua được, nhưng `flutter test` fail biên dịch thật vì package đó dùng API
+`Color.toARGB32()` chỉ có ở Flutter ≥3.27, dự án đang pin Flutter 3.24.5 → xác nhận yêu cầu nâng
+Flutter SDK là có thật, không tránh được bằng version pin nhỏ hơn.
 
-**Nguyên nhân xác nhận, không phải đoán**: `flutter doctor -v` xác nhận không có Android SDK.
-Đã thử cài Android command-line tools qua `sdkmanager`/tải trực tiếp — network policy của
-sandbox chặn `dl.google.com` (xác nhận qua `$HTTPS_PROXY/__agentproxy/status`: policy
-`connect_rejected` rõ ràng cho host này, không phải lỗi mạng tạm thời). Đã thử một số host thay
-thế (`maven.google.com`, ...) — không host nào phục vụ đúng Android SDK binary cần thiết.
+**Quyết định**: KHÔNG nâng Flutter SDK trong lần sửa lỗi này — đó là thay đổi toolchain lớn
+(ảnh hưởng CI, cấu hình local, khả năng tương thích các package khác), ngoài phạm vi yêu cầu sửa
+Critical/High của audit này, và cần được duyệt riêng. Đã revert override, `pubspec.yaml`/
+`pubspec.lock` giữ nguyên như trước.
 
-**Những gì ĐÃ xác nhận không phải nguyên nhân của lỗi build này**: `android/` project (Gradle
-scaffold, `AndroidManifest.xml`, v.v.) được sinh đúng qua `flutter create` chuẩn — không có lỗi
-cấu hình project, thuần túy là thiếu SDK binary do network policy.
+**Việc còn lại để build Android thật chạy được** (2 lựa chọn, cả hai đều là quyết định cần người
+duyệt, không phải patch nhỏ):
+1. Nâng Flutter SDK dự án lên ≥3.29 (đổi cả local toolchain lẫn `flutter-version` trong
+   `.github/workflows/ci.yml`), sau đó nâng `geolocator` lên `^14.0.0` — cần test lại toàn bộ
+   luồng vị trí (`_useMyLocation`, `_useGpsLocation`) trên Flutter mới.
+2. Thay `geolocator` bằng một package định vị khác tương thích Flutter 3.24.x — thay đổi kiến
+   trúc lớn hơn, không khuyến nghị chỉ để fix 1 build step.
 
-**Để tự chạy được**: máy có Android SDK (qua Android Studio hoặc `sdkmanager`, cần mạng truy
-cập được `dl.google.com`/`googleapis.com` không bị chặn) → `flutter build apk --debug` sẽ chạy.
-Không có gì trong code mobile cần sửa để build này pass.
+**Xác nhận rõ: đây không phải lỗi trong code của project này.** `android/app/build.gradle` (do
+`flutter create` sinh, thuộc project này) cấu hình đúng chuẩn (`compileSdk = flutter.compileSdkVersion`
+— xem file). Lỗi nằm hoàn toàn trong package bên thứ ba `geolocator_android` ở `.pub-cache`.
 
 ### ⚠️ BLOCKED BY ENVIRONMENT — iOS build (M10)
 

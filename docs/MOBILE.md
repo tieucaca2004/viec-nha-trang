@@ -95,7 +95,7 @@ Cả hai xác nhận bằng `npm run test:e2e` (34/34 pass) sau khi sửa — xe
 | M6 Notifications | ⚠️ Một phần | Backend FCM đã có thật; mobile CHƯA init Firebase native — xem mục dưới |
 | M7 Location | ✅ | `geolocator`, permission không chặn app, fallback chọn khu vực thủ công |
 | M8 Testing | ✅ | 56 test (unit + widget) sau audit remediation, `flutter test` pass, `flutter analyze` 0 issue |
-| M9 Android build | ⚠️ BLOCKED BY ENVIRONMENT | Xem `docs/BUILD.md` |
+| M9 Android build | ❌ FAILS on real CI (real bug, not env) | `geolocator_android 4.6.2` Gradle incompatibility, fix requires Flutter SDK ≥3.29 — xem `docs/BUILD.md` |
 | M10 iOS build | ⚠️ BLOCKED BY ENVIRONMENT | Sandbox Linux, không có Xcode — xem `docs/BUILD.md` |
 | M11 Docs/CI | ✅ | Tài liệu này + `docs/BUILD.md` + `docs/RELEASE.md` + CI |
 
