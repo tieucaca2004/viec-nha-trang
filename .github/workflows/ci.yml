@@ -135,19 +135,24 @@ jobs:
       # signing config release an toàn), chỉ khác API_BASE_URL/APP_ENV so với build phía trên.
       - name: Build Beta APK (staging API)
         if: github.event_name == 'workflow_dispatch' && inputs.staging_api_url != ''
+        # `flutter build apk` (Flutter 3.24.5) không có flag `-o`/`--output` để đổi tên/đường dẫn
+        # file - luôn ghi ra đúng build/app/outputs/flutter-apk/app-debug.apk cho debug build.
+        # An toàn để build đè lên file cũ ở đây vì bước "Upload debug APK artifact" phía trên đã
+        # upload xong bản app-debug.apk (localhost) trước khi bước này chạy - phân biệt 2 bản qua
+        # TÊN ARTIFACT khi upload (viec-nha-trang-debug-apk vs viec-nha-trang-beta-debug-apk), không
+        # qua tên file.
         run: |
           flutter build apk --debug \
             --dart-define=APP_ENV=staging \
             --dart-define=API_BASE_URL="${{ inputs.staging_api_url }}" \
-            --dart-define=DEFAULT_CITY_SLUG=nha-trang \
-            -o build/app/outputs/flutter-apk/app-beta-debug.apk
+            --dart-define=DEFAULT_CITY_SLUG=nha-trang
 
       - name: Upload Beta APK artifact
         if: github.event_name == 'workflow_dispatch' && inputs.staging_api_url != ''
         uses: actions/upload-artifact@v4
         with:
           name: viec-nha-trang-beta-debug-apk
-          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-debug.apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
 
   # Deploy job MẪU - không chạy tự động (thiếu GCP project/credentials thật trong repo này).
