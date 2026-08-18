@@ -4,6 +4,7 @@ node_modules/
 # Backend (NestJS)
 apps/backend/dist/
 apps/backend/coverage/
+apps/backend/tsconfig.tsbuildinfo
 apps/backend/.env
 apps/backend/.env.*
 !apps/backend/.env.example
