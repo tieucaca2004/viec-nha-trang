@@ -47,6 +47,19 @@ if grep -q "CHANGE-ME" apps/backend/.env.staging; then
   exit 1
 fi
 
+# Kiểm tra JWT_ACCESS_SECRET/JWT_REFRESH_SECRET có giá trị THẬT SỰ không rỗng - không chỉ kiểm
+# tra còn "CHANGE-ME" hay không. Passport-jwt sẽ throw "JwtStrategy requires a secret or key" ở
+# runtime nếu biến này tồn tại nhưng RỖNG (vd `JWT_ACCESS_SECRET=` không có giá trị) - lỗi đó khó
+# hiểu và xảy ra sau khi container đã "start" xong, nên kiểm tra ở đây sớm hơn, rõ ràng hơn.
+# KHÔNG in ra giá trị thật.
+for var in JWT_ACCESS_SECRET JWT_REFRESH_SECRET; do
+  value="$(grep -E "^${var}=" apps/backend/.env.staging | tail -n1 | cut -d= -f2- | tr -d '[:space:]')"
+  if [ -z "$value" ]; then
+    echo "LỖI: $var trong apps/backend/.env.staging bị thiếu hoặc RỖNG - phải có giá trị thật (vd \`openssl rand -base64 48\`)." >&2
+    exit 1
+  fi
+done
+
 echo "==> [1/7] Khởi động PostgreSQL"
 dc up -d postgres
 
