@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Chỉ áp dụng cho build DEBUG (android/app/src/debug/), KHÔNG ảnh hưởng build release/main.
+  Android chặn cleartext (HTTP) theo mặc định khi targetSdk >= 28. Cấu hình này chỉ mở cleartext
+  cho đúng IP backend staging (LAN nội bộ, đặc tả yêu cầu build APK test staging qua HTTP thuần,
+  chưa có domain/HTTPS ở bước này) - không mở cleartext cho toàn bộ domain nào khác.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.100.208</domain>
+    </domain-config>
+</network-security-config>
