@@ -1,0 +1,7 @@
+# Caddy config cho staging VIỆC NHA TRANG - THAY placeholder domain bên dưới bằng domain thật
+# trước khi chạy (Caddy tự xin cert Let's Encrypt qua HTTP-01, cần domain trỏ đúng IP server và
+# port 80/443 mở ra Internet). Không dùng chung domain/cert với bất kỳ service nào khác.
+
+staging-viecnhatrang.CHANGE-ME.example {
+	reverse_proxy backend:3000
+}

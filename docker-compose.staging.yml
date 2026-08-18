@@ -1,0 +1,74 @@
+# Staging/Beta stack cho VIỆC NHA TRANG - HOÀN TOÀN TÁCH BIỆT khỏi docker-compose.yml (dev) và
+# khỏi bất kỳ project/container/network/volume nào khác trên máy host (vd pshop-music). Không
+# dùng chung network, volume, secret hay container với bất kỳ project nào khác.
+#
+# Kiến trúc: Internet -> Caddy :443/:80 -> backend:3000 (không publish port) -> postgres:5432
+# (không publish port, chỉ trong network nội bộ viec-nha-trang-staging-net).
+#
+# Chạy thủ công trên server thật (KHÔNG chạy trong sandbox này - xem docs/BUILD.md/DEPLOYMENT.md):
+#   cp apps/backend/.env.staging.example apps/backend/.env.staging   # rồi điền secret thật
+#   docker compose -f docker-compose.staging.yml -p viec-nha-trang-staging up -d --build
+name: viec-nha-trang-staging
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: viec-nha-trang-staging-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${STAGING_DB_USER:-viecnhatrang}
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?Đặt STAGING_DB_PASSWORD trong apps/backend/.env.staging - không dùng mật khẩu mặc định}
+      POSTGRES_DB: ${STAGING_DB_NAME:-viec_nha_trang_staging}
+    volumes:
+      - viec_nha_trang_staging_pg:/var/lib/postgresql/data
+    networks:
+      - viec-nha-trang-staging-net
+    # KHÔNG có "ports:" - không publish ra host, chỉ backend trong cùng network nội bộ mới gọi được.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${STAGING_DB_USER:-viecnhatrang} -d ${STAGING_DB_NAME:-viec_nha_trang_staging}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: viec-nha-trang-staging-backend
+    restart: unless-stopped
+    env_file:
+      - ./apps/backend/.env.staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - viec-nha-trang-staging-net
+    # KHÔNG có "ports:" - chỉ Caddy trong cùng network gọi được backend:3000, không publish ra host.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: viec-nha-trang-staging-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - viec_nha_trang_staging_caddy_data:/data
+      - viec_nha_trang_staging_caddy_config:/config
+    networks:
+      - viec-nha-trang-staging-net
+    depends_on:
+      - backend
+
+networks:
+  viec-nha-trang-staging-net:
+    name: viec-nha-trang-staging-net
+
+volumes:
+  viec_nha_trang_staging_pg:
+    name: viec_nha_trang_staging_pg
+  viec_nha_trang_staging_caddy_data:
+    name: viec_nha_trang_staging_caddy_data
+  viec_nha_trang_staging_caddy_config:
+    name: viec_nha_trang_staging_caddy_config
