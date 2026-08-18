@@ -6,8 +6,14 @@
 # (không publish port, chỉ trong network nội bộ viec-nha-trang-staging-net).
 #
 # Chạy thủ công trên server thật (KHÔNG chạy trong sandbox này - xem docs/BUILD.md/DEPLOYMENT.md):
-#   cp apps/backend/.env.staging.example apps/backend/.env.staging   # rồi điền secret thật
-#   docker compose -f docker-compose.staging.yml -p viec-nha-trang-staging up -d --build
+#   cp docker-compose.staging.env.example docker-compose.staging.env   # điền mật khẩu DB thật
+#   cp apps/backend/.env.staging.example apps/backend/.env.staging     # điền JWT secret thật
+#   ./deploy-staging.sh
+#
+# Biến ${STAGING_DB_*} bên dưới được nội suy từ docker-compose.staging.env (truyền qua cờ
+# `--env-file`, KHÔNG export trong shell - tránh lộ mật khẩu vào lịch sử shell). Đây là NGUỒN
+# DUY NHẤT cho user/password/tên DB staging - DATABASE_URL của backend được ghép tự động từ
+# đúng 3 biến này (xem service "backend" bên dưới), nên không có 2 nơi lưu mật khẩu có thể lệch.
 name: viec-nha-trang-staging
 
 services:
@@ -17,7 +23,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${STAGING_DB_USER:-viecnhatrang}
-      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?Đặt STAGING_DB_PASSWORD trong apps/backend/.env.staging - không dùng mật khẩu mặc định}
+      POSTGRES_PASSWORD: ${STAGING_DB_PASSWORD:?Thiếu STAGING_DB_PASSWORD - copy docker-compose.staging.env.example sang docker-compose.staging.env rồi điền mật khẩu thật, không dùng mặc định}
       POSTGRES_DB: ${STAGING_DB_NAME:-viec_nha_trang_staging}
     volumes:
       - viec_nha_trang_staging_pg:/var/lib/postgresql/data
@@ -25,7 +31,10 @@ services:
       - viec-nha-trang-staging-net
     # KHÔNG có "ports:" - không publish ra host, chỉ backend trong cùng network nội bộ mới gọi được.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${STAGING_DB_USER:-viecnhatrang} -d ${STAGING_DB_NAME:-viec_nha_trang_staging}"]
+      # Dùng $$POSTGRES_USER/$$POSTGRES_DB (biến MÔI TRƯỜNG THẬT bên trong container postgres,
+      # do chính image postgres set ra từ environment: ở trên) thay vì nội suy Compose - tránh
+      # phụ thuộc file .env ở thời điểm chạy healthcheck.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -37,7 +46,13 @@ services:
     container_name: viec-nha-trang-staging-backend
     restart: unless-stopped
     env_file:
+      # Chỉ chứa JWT secrets/OTP/throttle/... - KHÔNG chứa DATABASE_URL (xem
+      # apps/backend/.env.staging.example - đã bỏ DATABASE_URL khỏi đó).
       - ./apps/backend/.env.staging
+    environment:
+      # Ghép từ đúng 3 biến STAGING_DB_* ở trên - nguồn duy nhất, không trùng lặp/lệch với
+      # bất kỳ DATABASE_URL nào khác có thể còn sót trong .env.staging.
+      DATABASE_URL: postgresql://${STAGING_DB_USER:-viecnhatrang}:${STAGING_DB_PASSWORD:?Thiếu STAGING_DB_PASSWORD}@postgres:5432/${STAGING_DB_NAME:-viec_nha_trang_staging}?schema=public
     depends_on:
       postgres:
         condition: service_healthy

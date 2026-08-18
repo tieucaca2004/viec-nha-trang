@@ -9,6 +9,10 @@ apps/backend/.env.*
 !apps/backend/.env.example
 !apps/backend/.env.staging.example
 
+# Staging deploy (Compose interpolation secrets - KHÔNG commit giá trị thật)
+docker-compose.staging.env
+!docker-compose.staging.env.example
+
 # Admin (Next.js)
 apps/admin/.next/
 apps/admin/out/
