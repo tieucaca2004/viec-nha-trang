@@ -9,7 +9,15 @@ on:
     branches: [main, master]
   # Cho phép chạy CI thủ công trên bất kỳ nhánh nào (vd để xác nhận CI thật trước khi mở PR)
   # mà không cần push vào main/master hay tạo PR - không ảnh hưởng trigger tự động ở trên.
+  # `staging_api_url` (tuỳ chọn): khi set, build debug APK trỏ tới backend staging đó thay vì
+  # localhost mặc định - dùng để build APK Beta test trên thiết bị thật (đặc tả yêu cầu Beta).
+  # KHÔNG chứa secret nào ở đây - chỉ là URL public của backend staging.
   workflow_dispatch:
+    inputs:
+      staging_api_url:
+        description: "API_BASE_URL cho build Beta (vd https://staging.example.com/api/v1). Bỏ trống = build thường (localhost), không tạo artifact Beta."
+        required: false
+        default: ""
 
 jobs:
   backend:
@@ -109,6 +117,38 @@ jobs:
       # test kiến trúc project (Gradle/manifest) - KHÔNG phải release build, không cần signing.
       # Xem docs/BUILD.md - đây là điểm khác với sandbox phát triển (bị chặn dl.google.com).
       - run: flutter build apk --debug
+
+      # Giữ lại chính file APK debug vừa build ở trên làm artifact tải về được, để có 1 file
+      # APK thật kiểm chứng được (CI runner không giữ lại file sau khi job kết thúc trừ khi
+      # upload artifact) - APK này build với API_BASE_URL mặc định (localhost), CHỈ dùng để xác
+      # nhận app build/cài đặt được, KHÔNG dùng để test luồng thật với backend (xem docs/BUILD.md).
+      - name: Upload debug APK artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: viec-nha-trang-debug-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 14
+
+      # Build APK Beta thứ hai trỏ tới backend staging thật, CHỈ khi người chạy workflow_dispatch
+      # cung cấp staging_api_url. Không hard-code URL production - vẫn debug build (chưa có
+      # signing config release an toàn), chỉ khác API_BASE_URL/APP_ENV so với build phía trên.
+      - name: Build Beta APK (staging API)
+        if: github.event_name == 'workflow_dispatch' && inputs.staging_api_url != ''
+        run: |
+          flutter build apk --debug \
+            --dart-define=APP_ENV=staging \
+            --dart-define=API_BASE_URL="${{ inputs.staging_api_url }}" \
+            --dart-define=DEFAULT_CITY_SLUG=nha-trang \
+            -o build/app/outputs/flutter-apk/app-beta-debug.apk
+
+      - name: Upload Beta APK artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.staging_api_url != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: viec-nha-trang-beta-debug-apk
+          path: apps/mobile/build/app/outputs/flutter-apk/app-beta-debug.apk
+          retention-days: 14
 
   # Deploy job MẪU - không chạy tự động (thiếu GCP project/credentials thật trong repo này).
   # Bật bằng cách thêm secrets GCP_PROJECT_ID/GCP_SA_KEY vào repo settings và đổi `if: false`
