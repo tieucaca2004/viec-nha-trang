@@ -5,6 +5,7 @@ node_modules/
 apps/backend/dist/
 apps/backend/coverage/
 apps/backend/tsconfig.tsbuildinfo
+apps/backend/tsconfig.build.tsbuildinfo
 apps/backend/.env
 apps/backend/.env.*
 !apps/backend/.env.example
