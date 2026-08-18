@@ -3,7 +3,14 @@
 // V1 chỉ seed thành phố Nha Trang, nhưng schema không hard-code Nha Trang.
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" cho dev/test local (sandbox/máy dev). "debian-openssl-3.0.x" cho image Docker
+  // runtime thật (node:20-bookworm-slim dùng Debian 12 "bookworm", OpenSSL 3.0.x - KHÔNG phải
+  // bản openssl-1.1.x cũ). Khai báo rõ để `prisma generate` không phải "đoán" bằng cách dò
+  // `openssl version` trong image slim (thiếu gói openssl nên dò sai, sinh nhầm engine
+  // debian-openssl-1.1.x - engine đó cần libssl.so.1.1, không có trong Debian 12 -> crash thật
+  // khi PrismaService.onModuleInit() load engine, đúng lỗi gặp trên server staging).
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
