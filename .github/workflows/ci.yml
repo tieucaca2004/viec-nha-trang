@@ -69,6 +69,16 @@ jobs:
           OTP_MAX_ATTEMPTS: "5"
           OTP_REQUEST_THROTTLE_LIMIT: "1000"
           OTP_VERIFY_THROTTLE_LIMIT: "1000"
+          # Cùng lý do relax OTP_*_THROTTLE_LIMIT ở trên: nhiều e2e case gọi liên tiếp
+          # /auth/register/email/request từ cùng 1 IP CI runner trong cùng 1 cửa sổ 60s - default
+          # sản xuất (3/5 lần mỗi phút) không đủ, gây 429 giả (không phải lỗi thật). Khớp với
+          # .env.test (không commit) dùng cho chạy local.
+          EMAIL_PROVIDER: console
+          EMAIL_VERIFICATION_TTL_SECONDS: "600"
+          EMAIL_VERIFICATION_MAX_ATTEMPTS: "5"
+          EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: "0"
+          EMAIL_VERIFICATION_REQUEST_THROTTLE_LIMIT: "1000"
+          EMAIL_VERIFICATION_VERIFY_THROTTLE_LIMIT: "1000"
           THROTTLE_TTL: "60"
           THROTTLE_LIMIT: "5000"
         run: |
