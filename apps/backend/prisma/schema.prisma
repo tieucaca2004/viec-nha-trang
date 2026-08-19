@@ -64,6 +64,7 @@ enum UserRole {
 
 enum AuthProvider {
   PHONE
+  EMAIL
   GOOGLE
   APPLE
 }
@@ -76,6 +77,10 @@ model User {
   roles         UserRole[] @default([JOB_SEEKER])
   authProvider  AuthProvider @default(PHONE) @map("auth_provider")
   isPhoneVerified Boolean  @default(false) @map("is_phone_verified")
+  // Xác minh email (đăng ký tài khoản, đặc tả §1 phase kế tiếp) - tách biệt hoàn toàn khỏi
+  // isPhoneVerified: email dùng cho ĐĂNG KÝ tài khoản, phone chỉ verify khi cần dùng chức năng
+  // quan trọng (ứng tuyển/đăng tuyển) - không dùng SMS OTP ở bước tạo tài khoản nữa.
+  isEmailVerified Boolean  @default(false) @map("is_email_verified")
   isActive      Boolean    @default(true) @map("is_active")
   isBanned      Boolean    @default(false) @map("is_banned")
   bannedReason  String?    @map("banned_reason")
@@ -89,6 +94,7 @@ model User {
   employerProfile  EmployerProfile?
   refreshTokens    RefreshToken[]
   otpCodes         OtpCode[]
+  emailVerificationCodes EmailVerificationCode[]
   notifications    Notification[]
   savedJobs        SavedJob[]
   reportsFiled     Report[]          @relation("ReportsFiledByUser")
@@ -128,6 +134,25 @@ model OtpCode {
   @@map("otp_codes")
 }
 
+// Mã xác minh email cho đăng ký tài khoản - cấu trúc song song với OtpCode (mục §1 phase kế
+// tiếp) nhưng tách bảng riêng vì khác kênh gửi (email, không phải SMS) và khác vòng đời (dùng
+// cho đăng ký tài khoản, không phải đăng nhập lại).
+model EmailVerificationCode {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  email     String
+  codeHash  String   @map("code_hash")
+  attempts  Int      @default(0)
+  expiresAt DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([email])
+  @@map("email_verification_codes")
+}
+
 // ---------- Hồ sơ người tìm việc (mục 12) ----------
 
 enum ExperienceLevel {
@@ -154,6 +179,7 @@ model JobSeekerProfile {
   latitude            Float?
   longitude           Float?
   desiredCategoryId   String?           @map("desired_category_id")
+  dateOfBirth         DateTime?         @map("date_of_birth") @db.Date
   experienceLevel     ExperienceLevel   @default(NONE) @map("experience_level")
   skills              String[]          @default([])
   shiftPreferences    ShiftPreference[] @default([])

@@ -8,6 +8,7 @@ import '../../profile/data/job_seeker_profile_service.dart';
 import '../../profile/presentation/job_seeker_profile_form_screen.dart';
 import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
+import '../../../shared/widgets/phone_verification_sheet.dart';
 
 /// Trang chi tiết việc làm (đặc tả §11 Phase 3): mô tả, yêu cầu, quyền lợi,
 /// thông tin nhà tuyển dụng, và 3 nút hành động chính: Ứng tuyển / Gọi / Zalo.
@@ -96,8 +97,27 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       setState(() => _applied = true);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
     } on ApiException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+      // Đặc tả §3: backend từ chối ứng tuyển khi số điện thoại chưa xác minh, báo bằng message
+      // cố định 'PHONE_NOT_VERIFIED' (không phải lỗi 403 chung) - mở sheet xác minh ngay tại
+      // đây, xong thì thử ứng tuyển lại 1 lần, không bắt người dùng bấm nút ỨNG TUYỂN lần nữa.
+      if (e.statusCode == 403 && e.rawMessage == 'PHONE_NOT_VERIFIED') {
+        if (!mounted) return;
+        final verified = await showPhoneVerificationSheet(context);
+        if (verified == true && mounted) {
+          try {
+            await applicationsService.apply(widget.jobId);
+            if (!mounted) return;
+            setState(() => _applied = true);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
+          } on ApiException catch (e2) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
+          }
+        }
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+      }
     } finally {
       if (mounted) setState(() => _applying = false);
     }

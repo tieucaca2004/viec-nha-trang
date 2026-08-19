@@ -59,17 +59,46 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
 
           return RefreshIndicator(
             onRefresh: _load,
-            child: GridView.count(
+            child: ListView(
               padding: const EdgeInsets.all(16),
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.4,
               children: [
-                _statCard('Tin đang tuyển', activeJobs.toString(), Icons.work_outline),
-                _statCard('Lượt xem', totalViews.toString(), Icons.visibility_outlined),
-                _statCard('Ứng viên', totalApplications.toString(), Icons.people_outline),
-                _statCard('Đã tuyển', totalHired.toString(), Icons.check_circle_outline),
+                // Chưa đăng tin nào - các số liệu 0 bên dưới là trạng thái rỗng hợp lệ (đúng thực
+                // tế backend, không phải lỗi), không phải số liệu giả - nói rõ để tránh hiểu nhầm
+                // "dashboard không có dữ liệu" là bug.
+                if (jobs.isEmpty)
+                  Card(
+                    color: const Color(0xFFFFF8E1),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline, color: Colors.orange),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'Bạn chưa đăng tin tuyển dụng nào. Đăng tin đầu tiên để bắt đầu thấy số liệu tại đây.',
+                              style: TextStyle(color: Colors.orange.shade900),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (jobs.isEmpty) const SizedBox(height: 12),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 1.4,
+                  children: [
+                    _statCard('Tin đang tuyển', activeJobs.toString(), Icons.work_outline),
+                    _statCard('Lượt xem', totalViews.toString(), Icons.visibility_outlined),
+                    _statCard('Ứng viên', totalApplications.toString(), Icons.people_outline),
+                    _statCard('Đã tuyển', totalHired.toString(), Icons.check_circle_outline),
+                  ],
+                ),
               ],
             ),
           );

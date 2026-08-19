@@ -5,18 +5,21 @@ import '../../../core/auth/session.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/widgets/main_nav_scaffold.dart';
 
-class OtpScreen extends StatefulWidget {
-  final String phone;
+/// Nhập mã xác minh email để hoàn tất đăng ký (đặc tả §1 phase kế tiếp) - cùng cấu trúc
+/// navigation với OtpScreen (giữ Home làm route gốc, không đẩy chồng nhiều bản Home).
+class EmailVerifyScreen extends StatefulWidget {
+  final String email;
   final String intendedRole;
-  const OtpScreen({super.key, required this.phone, this.intendedRole = 'JOB_SEEKER'});
+  const EmailVerifyScreen({super.key, required this.email, this.intendedRole = 'JOB_SEEKER'});
 
   @override
-  State<OtpScreen> createState() => _OtpScreenState();
+  State<EmailVerifyScreen> createState() => _EmailVerifyScreenState();
 }
 
-class _OtpScreenState extends State<OtpScreen> {
+class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
   final _codeController = TextEditingController();
   bool _loading = false;
+  bool _resending = false;
   String? _error;
 
   Future<void> _submit() async {
@@ -27,18 +30,14 @@ class _OtpScreenState extends State<OtpScreen> {
     try {
       final authService = context.read<AuthService>();
       final session = context.read<Session>();
-      await authService.verifyOtp(widget.phone, _codeController.text.trim());
+      await authService.verifyEmailAndRegister(widget.email, _codeController.text.trim());
 
-      // Ý định ban đầu chọn ở onboarding (đặc tả §6) - nếu chọn "Tuyển người" và tài khoản
-      // chưa có vai trò EMPLOYER, thêm vai trò đó (không tạo tài khoản mới, đặc tả §5 gốc).
       if (widget.intendedRole == 'EMPLOYER' && !session.isEmployer) {
         await authService.becomeEmployer();
       }
       await session.setActiveRole(widget.intendedRole);
 
       if (!mounted) return;
-      // Giữ lại route đầu tiên (Home - OnboardingScreen, xem main.dart) thay vì xoá sạch toàn bộ
-      // stack, để Home vẫn còn đó cho user quay lại được sau khi đăng nhập (sửa lỗi navigation §1).
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const MainNavScaffold()),
         (route) => route.isFirst,
@@ -50,16 +49,32 @@ class _OtpScreenState extends State<OtpScreen> {
     }
   }
 
+  Future<void> _resend() async {
+    setState(() {
+      _resending = true;
+      _error = null;
+    });
+    try {
+      await context.read<AuthService>().requestEmailVerification(widget.email);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gửi lại mã xác minh.')));
+    } on ApiException catch (e) {
+      setState(() => _error = e.userMessage);
+    } finally {
+      if (mounted) setState(() => _resending = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Xác thực OTP')),
+      appBar: AppBar(title: const Text('Xác minh email')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Nhập mã OTP gửi tới ${widget.phone}', style: const TextStyle(fontSize: 16)),
+            Text('Nhập mã xác minh gửi tới ${widget.email}', style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 20),
             TextField(
               controller: _codeController,
@@ -80,6 +95,13 @@ class _OtpScreenState extends State<OtpScreen> {
               child: _loading
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
                   : const Text('XÁC NHẬN', style: TextStyle(fontSize: 16)),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: _resending ? null : _resend,
+              child: _resending
+                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Text('Gửi lại mã'),
             ),
           ],
         ),

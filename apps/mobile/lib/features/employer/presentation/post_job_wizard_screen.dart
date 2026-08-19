@@ -5,6 +5,7 @@ import '../../../shared/models/job.dart';
 import '../../jobs/data/jobs_service.dart';
 import '../data/employer_jobs_service.dart';
 import '../data/employer_profile_service.dart';
+import '../../../shared/widgets/phone_verification_sheet.dart';
 
 /// Wizard đăng tin cực ngắn - mỗi bước 1 câu hỏi, mục tiêu đăng tin trong 1-2 phút
 /// (đặc tả §19 Phase 3). Lương là trường bắt buộc: không cho qua bước nếu thiếu, khớp
@@ -99,33 +100,53 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
     }
   }
 
+  Map<String, dynamic> _buildJobPayload() {
+    return {
+      'employerLocationId': _locationId,
+      'categoryId': _categoryId,
+      'title': _categories.firstWhere((c) => c.id == _categoryId).name,
+      'description': _descriptionController.text.trim(),
+      'headcount': _headcount,
+      'employmentType': _employmentType,
+      'shifts': _shifts.toList(),
+      'shiftStartTime': _shiftStartController.text.trim().isEmpty ? null : _shiftStartController.text.trim(),
+      'shiftEndTime': _shiftEndController.text.trim().isEmpty ? null : _shiftEndController.text.trim(),
+      'salaryMin': int.tryParse(_salaryMinController.text) ?? 0,
+      'salaryMax': int.tryParse(_salaryMaxController.text) ?? 0,
+      'salaryUnit': _salaryUnit,
+      'startUrgency': _startUrgency,
+      'requiredExperience': _requiredExperience,
+      'isUrgent': _startUrgency == 'IMMEDIATE',
+    };
+  }
+
   Future<void> _submit() async {
     setState(() {
       _submitting = true;
       _error = null;
     });
     try {
-      await context.read<EmployerJobsService>().createJob({
-        'employerLocationId': _locationId,
-        'categoryId': _categoryId,
-        'title': _categories.firstWhere((c) => c.id == _categoryId).name,
-        'description': _descriptionController.text.trim(),
-        'headcount': _headcount,
-        'employmentType': _employmentType,
-        'shifts': _shifts.toList(),
-        'shiftStartTime': _shiftStartController.text.trim().isEmpty ? null : _shiftStartController.text.trim(),
-        'shiftEndTime': _shiftEndController.text.trim().isEmpty ? null : _shiftEndController.text.trim(),
-        'salaryMin': int.tryParse(_salaryMinController.text) ?? 0,
-        'salaryMax': int.tryParse(_salaryMaxController.text) ?? 0,
-        'salaryUnit': _salaryUnit,
-        'startUrgency': _startUrgency,
-        'requiredExperience': _requiredExperience,
-        'isUrgent': _startUrgency == 'IMMEDIATE',
-      });
+      await context.read<EmployerJobsService>().createJob(_buildJobPayload());
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on ApiException catch (e) {
-      setState(() => _error = e.userMessage);
+      // Đặc tả §3: backend từ chối đăng tuyển khi số điện thoại chưa xác minh (message cố định
+      // 'PHONE_NOT_VERIFIED') - mở sheet xác minh ngay, xong thử đăng tin lại 1 lần.
+      if (e.statusCode == 403 && e.rawMessage == 'PHONE_NOT_VERIFIED') {
+        if (!mounted) return;
+        final verified = await showPhoneVerificationSheet(context);
+        if (verified == true && mounted) {
+          try {
+            await context.read<EmployerJobsService>().createJob(_buildJobPayload());
+            if (!mounted) return;
+            Navigator.of(context).pop(true);
+          } on ApiException catch (e2) {
+            if (mounted) setState(() => _error = e2.userMessage);
+          }
+        }
+      } else {
+        setState(() => _error = e.userMessage);
+      }
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

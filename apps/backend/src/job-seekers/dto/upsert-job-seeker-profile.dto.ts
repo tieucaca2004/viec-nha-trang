@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsLatitude,
@@ -39,6 +40,13 @@ export class UpsertJobSeekerProfileDto {
   @IsOptional()
   @IsString()
   desiredCategoryId?: string;
+
+  // Ngày sinh (đặc tả §2) - nhận string ISO date "YYYY-MM-DD" từ frontend, validate ở service
+  // (không cho ngày tương lai) vì class-validator không có sẵn kiểm tra "không tương lai" động
+  // theo thời điểm request (MaxDate chỉ nhận mốc cố định lúc khai báo class).
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
 
   @IsOptional()
   @IsEnum(ExperienceLevel)

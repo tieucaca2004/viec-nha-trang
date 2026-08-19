@@ -24,6 +24,15 @@ export class ApplicationsService {
 
   // Ứng tuyển 1 chạm (mục 11): không cần CV, chỉ cần hồ sơ cơ bản đã có sẵn.
   async apply(userId: string, jobId: string) {
+    // Xác minh số điện thoại trước khi ứng tuyển (đặc tả §3) - KHÔNG bắt buộc lúc đăng ký tài
+    // khoản nữa (đăng ký giờ dùng email), chỉ bắt buộc verify phone khi thật sự cần dùng chức
+    // năng quan trọng. Message 'PHONE_NOT_VERIFIED' là chuỗi cố định để frontend nhận diện và
+    // mở luồng xác minh OTP (POST /auth/phone/link/request + /verify), không phải lỗi chung.
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.isPhoneVerified) {
+      throw new ForbiddenException('PHONE_NOT_VERIFIED');
+    }
+
     const seeker = await this.prisma.jobSeekerProfile.findUnique({ where: { userId } });
     if (!seeker) throw new BadRequestException('Vui lòng tạo hồ sơ tìm việc trước khi ứng tuyển.');
 

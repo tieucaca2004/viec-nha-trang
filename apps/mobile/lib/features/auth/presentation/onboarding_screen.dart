@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
-import 'phone_login_screen.dart';
+import 'package:provider/provider.dart';
+import 'email_register_screen.dart';
+import '../../../core/auth/session.dart';
+import '../../../shared/widgets/main_nav_scaffold.dart';
 
-/// Màn hình lần đầu mở app (đặc tả Phase 3 §6): logo + slogan + chọn nhu cầu.
+/// Home/root của app (đặc tả Phase 3 §6, sửa lỗi navigation §1): logo + slogan + chọn nhu cầu.
+/// Đây LUÔN là route đầu tiên của app (xem main.dart), kể cả khi đã đăng nhập - để mọi màn hình
+/// bên trong luôn có đường quay lại đúng Home này qua Navigator.pop/system back, thay vì Home
+/// biến mất khỏi stack sau khi đăng nhập như trước.
+///
 /// Vai trò chọn ở đây chỉ là "ý định ban đầu" - tài khoản vẫn có thể có cả 2 vai trò và
 /// chuyển đổi sau (đặc tả §5 gốc, backend đã hỗ trợ qua PATCH /me/roles).
 class OnboardingScreen extends StatelessWidget {
@@ -34,13 +41,13 @@ class OnboardingScreen extends StatelessWidget {
               const Text('Bạn đang muốn:', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: () => _goToLogin(context, 'JOB_SEEKER'),
+                onPressed: () => _selectRole(context, 'JOB_SEEKER'),
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
                 child: const Text('TÌM VIỆC', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
-                onPressed: () => _goToLogin(context, 'EMPLOYER'),
+                onPressed: () => _selectRole(context, 'EMPLOYER'),
                 style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
                 child: const Text('TUYỂN NGƯỜI', style: TextStyle(fontSize: 16)),
               ),
@@ -52,9 +59,21 @@ class OnboardingScreen extends StatelessWidget {
     );
   }
 
-  void _goToLogin(BuildContext context, String intendedRole) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => PhoneLoginScreen(intendedRole: intendedRole)),
-    );
+  // Đã đăng nhập -> vào thẳng nav của vai trò đó (không qua lại màn đăng ký/đăng nhập). Chưa
+  // đăng nhập -> đăng ký bằng EMAIL (đặc tả §1 phase kế tiếp: không dùng SMS OTP để tạo tài
+  // khoản nữa). Tài khoản cũ tạo qua SĐT vẫn đăng nhập được qua liên kết trong
+  // EmailRegisterScreen ("Đăng nhập bằng SĐT") - KHÔNG xoá bỏ PhoneLoginScreen.
+  void _selectRole(BuildContext context, String intendedRole) {
+    final session = context.read<Session>();
+    if (session.isLoggedIn) {
+      session.setActiveRole(intendedRole);
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const MainNavScaffold()),
+      );
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => EmailRegisterScreen(intendedRole: intendedRole)),
+      );
+    }
   }
 }

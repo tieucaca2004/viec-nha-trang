@@ -9,6 +9,13 @@ export class JobsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateJobDto) {
+    // Xác minh số điện thoại trước khi đăng tuyển (đặc tả §3) - cùng nguyên tắc với apply() ở
+    // ApplicationsService: message 'PHONE_NOT_VERIFIED' cố định để frontend nhận diện.
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.isPhoneVerified) {
+      throw new ForbiddenException('PHONE_NOT_VERIFIED');
+    }
+
     const employer = await this.prisma.employerProfile.findUnique({ where: { userId } });
     if (!employer) throw new NotFoundException('Chưa có hồ sơ nhà tuyển dụng.');
 
