@@ -9,6 +9,8 @@ import '../../profile/presentation/job_seeker_profile_form_screen.dart';
 import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
 import '../../../shared/widgets/phone_verification_sheet.dart';
+import '../../../shared/widgets/job_provenance_badge.dart';
+import '../../../shared/models/job.dart';
 
 /// Trang chi tiết việc làm (đặc tả §11 Phase 3): mô tả, yêu cầu, quyền lợi,
 /// thông tin nhà tuyển dụng, và 3 nút hành động chính: Ứng tuyển / Gọi / Zalo.
@@ -201,12 +203,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Widget _buildBody(Map<String, dynamic> job) {
     final employer = job['employer'] as Map<String, dynamic>?;
     final area = job['area'] as Map<String, dynamic>?;
+    // Nhãn nguồn dữ liệu (đặc tả JobHunter Phần 11) - tái dùng Job.fromJson() có sẵn thay vì
+    // refactor toàn bộ màn này sang dùng Job model (map thô vẫn đủ field từ GET /jobs/:id).
+    final provenanceJob = Job.fromJson(job);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
       children: [
         Text(job['title'] ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         Text(employer?['businessName'] ?? '', style: const TextStyle(fontSize: 16, color: Colors.black54)),
+        if (provenanceJob.isSynthetic || provenanceJob.isImported) ...[
+          const SizedBox(height: 4),
+          JobProvenanceBadge(job: provenanceJob),
+        ],
         const SizedBox(height: 4),
         const Text('🟢 Đang tuyển', style: TextStyle(color: Colors.green)),
         const SizedBox(height: 12),

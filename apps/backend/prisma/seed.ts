@@ -49,6 +49,58 @@ const TEST_ADMIN_PHONE = '0900000001';
 const TEST_EMPLOYER_PHONE = '0900000002';
 const TEST_JOB_SEEKER_PHONE = '0900000003';
 
+// JobHunter source registry (đặc tả JobHunter Phần 5/6) - CHỈ đăng ký nguồn, KHÔNG crawl thật.
+// - USER_CREATED/SYNTHETIC: 2 pseudo-source cố định đại diện cho job người dùng tự đăng / job
+//   sinh tổng hợp để test - không phải nguồn thu thập, dùng để mọi Job (kể cả cũ) có thể liên kết
+//   source nếu cần truy vấn thống nhất qua sourceId (hiện KHÔNG bắt buộc - USER_CREATED thật vẫn
+//   để sourceId=null theo hành vi jobs.service.ts hiện có, không đổi).
+// - Các nguồn thật (CareerViet/TopCV/Trung tâm DVVL Khánh Hòa/vieclamkhanhhoa.com): status=MANUAL
+//   (nguồn hợp pháp/công khai nhưng batch này CHƯA có collector tự động nào - cần nghiên cứu kỹ
+//   điều khoản sử dụng/robots.txt trước khi tự động hoá ở 1 task riêng sau này). KHÔNG bypass
+//   login/CAPTCHA/access control, KHÔNG hard-code dữ liệu đã scrape vào source code.
+const JOB_SOURCES: Array<{
+  name: string;
+  type: 'USER_CREATED' | 'SYNTHETIC' | 'WEBSITE' | 'FACEBOOK' | 'API' | 'RSS' | 'PARTNER';
+  url?: string;
+  status: 'ACTIVE' | 'MANUAL' | 'UNSUPPORTED' | 'DISABLED' | 'ERROR';
+  parser?: string;
+}> = [
+  { name: 'user_created', type: 'USER_CREATED', status: 'ACTIVE' },
+  { name: 'synthetic', type: 'SYNTHETIC', status: 'ACTIVE' },
+  {
+    name: 'careerviet',
+    type: 'WEBSITE',
+    url: 'https://careerviet.vn',
+    status: 'MANUAL',
+  },
+  {
+    name: 'topcv',
+    type: 'WEBSITE',
+    url: 'https://www.topcv.vn',
+    status: 'MANUAL',
+  },
+  {
+    name: 'trung_tam_dvvl_khanh_hoa',
+    type: 'WEBSITE',
+    url: 'https://vieclamkhanhhoa.vn',
+    status: 'MANUAL',
+  },
+  {
+    name: 'vieclamkhanhhoa_com',
+    type: 'WEBSITE',
+    url: 'https://vieclamkhanhhoa.com',
+    status: 'MANUAL',
+  },
+  {
+    // Facebook group tuyển dụng: yêu cầu đăng nhập để xem đầy đủ, Facebook Graph API không cấp
+    // quyền đọc group công khai cho app thường - không thể thu thập tự động hợp lệ mà không
+    // bypass login/access control (bị cấm rõ ở đặc tả Phần 6). Đánh dấu UNSUPPORTED, không cố crawl.
+    name: 'facebook_job_groups',
+    type: 'FACEBOOK',
+    status: 'UNSUPPORTED',
+  },
+];
+
 function slugify(input: string): string {
   return input
     .normalize('NFD')
@@ -88,6 +140,21 @@ async function main() {
       create: { name, slug, sortOrder: i, isActive: true },
     });
     categoryByName.set(name, category.id);
+  }
+
+  for (const source of JOB_SOURCES) {
+    await prisma.jobSource.upsert({
+      where: { name: source.name },
+      update: {},
+      create: {
+        name: source.name,
+        type: source.type,
+        url: source.url,
+        status: source.status,
+        parser: source.parser,
+        enabled: source.status === 'ACTIVE',
+      },
+    });
   }
 
   // ---- Tài khoản admin mẫu ----

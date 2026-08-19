@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../shared/models/job.dart';
+import '../../../../shared/widgets/job_provenance_badge.dart';
 
 /// Job Card hiển thị đủ trường tối thiểu theo đặc tả §8 Phase 3 (mục 6 gốc):
 /// tên công việc, cơ sở, lương, ca, khu vực + khoảng cách, loại việc,
@@ -62,6 +63,10 @@ class JobCard extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               Text(job.employer?.businessName ?? '', style: const TextStyle(color: Colors.black54), maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (job.isSynthetic || job.isImported) ...[
+                const SizedBox(height: 4),
+                JobProvenanceBadge(job: job),
+              ],
               const SizedBox(height: 6),
               Text(
                 job.salaryLabel,

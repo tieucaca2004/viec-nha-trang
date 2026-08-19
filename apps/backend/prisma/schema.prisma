@@ -314,6 +314,61 @@ enum JobStatus {
   REJECTED
 }
 
+// ---------- Job data pipeline / provenance (JobHunter foundation) ----------
+// Phân biệt rõ nguồn dữ liệu của mỗi Job - KHÔNG được để dữ liệu SYNTHETIC/IMPORTED giả
+// mạo thành người dùng thật. USER_CREATED là hành vi mặc định hiện có (không đổi).
+enum JobProvenance {
+  USER_CREATED
+  IMPORTED
+  SYNTHETIC
+}
+
+// Loại nguồn thu thập (source registry) - độc lập với JobProvenance ở trên (1 nguồn IMPORTED
+// có thể là WEBSITE/FACEBOOK/API/RSS/PARTNER; USER_CREATED/SYNTHETIC là 2 pseudo-source cố định
+// đại diện cho job người dùng tự đăng / job sinh tổng hợp để test).
+enum SourceKind {
+  WEBSITE
+  FACEBOOK
+  API
+  RSS
+  PARTNER
+  USER_CREATED
+  SYNTHETIC
+}
+
+// ACTIVE: có thể crawl tự động (chưa implement collector thật ở batch này).
+// MANUAL: nguồn thật đã xác nhận nhưng thu thập thủ công (chưa có collector được phép).
+// UNSUPPORTED: nguồn không cho phép/khó thu thập tự động hợp lệ (vd chặn robots, cần login) -
+//   KHÔNG được cố bypass, chỉ đánh dấu trạng thái này.
+// DISABLED: tắt tạm thời. ERROR: lần crawl gần nhất lỗi.
+enum SourceStatus {
+  ACTIVE
+  MANUAL
+  UNSUPPORTED
+  DISABLED
+  ERROR
+}
+
+// Source registry (đặc tả Phần 5) - foundation cho JobHunter, CHƯA có collector thật nào chạy
+// tự động trong batch này (không crawl Facebook, không bypass login/CAPTCHA/access control).
+model JobSource {
+  id            String       @id @default(uuid())
+  name          String       @unique
+  type          SourceKind
+  url           String?
+  enabled       Boolean      @default(true)
+  crawlInterval Int?         @map("crawl_interval") // phút giữa các lần crawl (khi có collector thật)
+  lastCrawledAt DateTime?    @map("last_crawled_at")
+  parser        String?      // tên adapter/parser sẽ dùng khi có collector thật (chưa implement)
+  status        SourceStatus @default(MANUAL)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  jobs Job[]
+
+  @@map("job_sources")
+}
+
 model Job {
   id                 String             @id @default(uuid())
   employerId         String             @map("employer_id")
@@ -352,18 +407,37 @@ model Job {
   updatedAt          DateTime           @updatedAt @map("updated_at")
   deletedAt          DateTime?          @map("deleted_at")
 
+  // ---- Provenance (JobHunter foundation, Phần 1) ----
+  // sourceType mặc định USER_CREATED - KHÔNG đổi hành vi jobs.service.ts.create() hiện có
+  // (Prisma tự áp default, service không cần set field này).
+  sourceType        JobProvenance @default(USER_CREATED) @map("source_type")
+  sourceId          String?       @map("source_id") // FK JobSource - null cho USER_CREATED
+  sourceName        String?       @map("source_name") // vd "careerviet", "synthetic"
+  sourceUrl         String?       @map("source_url") // URL gốc - KHÔNG BAO GIỜ được mất với job IMPORTED
+  sourceJobId       String?       @map("source_job_id") // id/slug của tin trên nguồn gốc
+  sourcePublishedAt DateTime?     @map("source_published_at") // ngày đăng THẬT trên nguồn - null nếu không xác định được, KHÔNG bịa
+  sourceUpdatedAt   DateTime?     @map("source_updated_at") // ngày cập nhật THẬT trên nguồn - null nếu không xác định được
+  importedAt        DateTime?     @map("imported_at") // thời điểm hệ thống này import - khác sourcePublishedAt/sourceUpdatedAt
+  duplicateOfId     String?       @map("duplicate_of_id") // trỏ về canonical Job nếu tin này là bản trùng đã gom (Phần 8)
+
   employer         EmployerProfile   @relation(fields: [employerId], references: [id])
   employerLocation EmployerLocation  @relation(fields: [employerLocationId], references: [id])
   category         JobCategory       @relation(fields: [categoryId], references: [id])
   city             City              @relation(fields: [cityId], references: [id])
   area             Area              @relation(fields: [areaId], references: [id])
+  source           JobSource?        @relation(fields: [sourceId], references: [id])
+  duplicateOf      Job?              @relation("JobDuplicates", fields: [duplicateOfId], references: [id])
+  duplicates       Job[]             @relation("JobDuplicates")
   applications     Application[]
   savedBy          SavedJob[]
   reports          Report[]          @relation("ReportsOnJob")
 
+  @@unique([sourceName, sourceJobId])
   @@index([areaId, status])
   @@index([categoryId, status])
   @@index([employerId])
+  @@index([sourceType])
+  @@index([duplicateOfId])
   @@map("jobs")
 }
 

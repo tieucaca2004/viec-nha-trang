@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "seed:synthetic": "ts-node prisma/seed-synthetic.ts",
     "pretest:e2e": "dotenv -e .env.test -- prisma migrate deploy"
   },
   "prisma": {

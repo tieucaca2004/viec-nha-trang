@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { JobStatus, ReportStatus, VerificationLevel } from '@prisma/client';
+import { JobProvenance, JobStatus, ReportStatus, VerificationLevel } from '@prisma/client';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -50,8 +50,25 @@ export class AdminController {
   }
 
   @Get('jobs')
-  listJobs(@Query('skip') skip?: string, @Query('take') take?: string, @Query('status') status?: JobStatus) {
-    return this.adminService.listJobs({ skip: Number(skip) || 0, take: Number(take) || 20, status });
+  listJobs(
+    @Query('skip') skip?: string,
+    @Query('take') take?: string,
+    @Query('status') status?: JobStatus,
+    @Query('sourceType') sourceType?: JobProvenance,
+  ) {
+    return this.adminService.listJobs({ skip: Number(skip) || 0, take: Number(take) || 20, status, sourceType });
+  }
+
+  // Đếm theo sourceType/status/duplicate (đặc tả JobHunter Phần 9) - phân biệt rõ dữ liệu
+  // USER_CREATED/IMPORTED/SYNTHETIC, không để lẫn.
+  @Get('jobs/data-overview')
+  jobsDataOverview() {
+    return this.adminService.jobsDataOverview();
+  }
+
+  @Get('job-sources')
+  listJobSources() {
+    return this.adminService.listJobSources();
   }
 
   @Patch('jobs/:id/status')

@@ -67,6 +67,12 @@ class Job {
   final bool isUrgent;
   final String status;
   final DateTime? publishedAt;
+  // Provenance (đặc tả JobHunter Phần 11) - USER_CREATED không hiển thị gì khác thường lệ;
+  // SYNTHETIC hiển thị nhãn "Dữ liệu mẫu"/"Tin mẫu"; IMPORTED hiển thị "Nguồn: X" + ngày.
+  final String sourceType;
+  final String? sourceName;
+  final DateTime? sourcePublishedAt;
+  final DateTime? sourceUpdatedAt;
 
   Job({
     required this.id,
@@ -84,7 +90,14 @@ class Job {
     required this.isUrgent,
     required this.status,
     this.publishedAt,
+    this.sourceType = 'USER_CREATED',
+    this.sourceName,
+    this.sourcePublishedAt,
+    this.sourceUpdatedAt,
   });
+
+  bool get isSynthetic => sourceType == 'SYNTHETIC';
+  bool get isImported => sourceType == 'IMPORTED';
 
   String get salaryLabel {
     final unitLabel = {'HOUR': '/giờ', 'DAY': '/ngày', 'MONTH': '/tháng', 'SHIFT': '/ca'}[salaryUnit] ?? '';
@@ -117,5 +130,9 @@ class Job {
         isUrgent: json['isUrgent'] ?? false,
         status: json['status'] ?? 'ACTIVE',
         publishedAt: json['publishedAt'] != null ? DateTime.tryParse(json['publishedAt']) : null,
+        sourceType: json['sourceType'] ?? 'USER_CREATED',
+        sourceName: json['sourceName'],
+        sourcePublishedAt: json['sourcePublishedAt'] != null ? DateTime.tryParse(json['sourcePublishedAt']) : null,
+        sourceUpdatedAt: json['sourceUpdatedAt'] != null ? DateTime.tryParse(json['sourceUpdatedAt']) : null,
       );
 }

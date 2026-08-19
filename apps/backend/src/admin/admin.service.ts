@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { JobStatus, Prisma, ReportStatus, VerificationLevel } from '@prisma/client';
+import { JobProvenance, JobStatus, Prisma, ReportStatus, VerificationLevel } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SAFE_USER_SELECT } from '../common/services/safe-select';
 
@@ -75,14 +75,56 @@ export class AdminService {
   }
 
   // ---- Jobs ----
-  listJobs(params: { skip?: number; take?: number; status?: JobStatus }) {
+  listJobs(params: { skip?: number; take?: number; status?: JobStatus; sourceType?: JobProvenance }) {
     return this.prisma.job.findMany({
-      where: { deletedAt: null, ...(params.status ? { status: params.status } : {}) },
+      where: {
+        deletedAt: null,
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.sourceType ? { sourceType: params.sourceType } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       skip: params.skip ?? 0,
       take: params.take ?? 20,
-      include: { employer: true, category: true, area: true },
+      include: { employer: true, category: true, area: true, source: true },
     });
+  }
+
+  // Tổng quan dữ liệu Job theo nguồn (đặc tả JobHunter Phần 9) - để admin phân biệt rõ
+  // USER_CREATED/IMPORTED/SYNTHETIC, không để lẫn dữ liệu tổng hợp với dữ liệu người dùng thật.
+  async jobsDataOverview() {
+    const [total, byStatusRaw, bySourceTypeRaw, duplicateCount] = await Promise.all([
+      this.prisma.job.count({ where: { deletedAt: null } }),
+      this.prisma.job.groupBy({ by: ['status'], where: { deletedAt: null }, _count: { _all: true } }),
+      this.prisma.job.groupBy({ by: ['sourceType'], where: { deletedAt: null }, _count: { _all: true } }),
+      this.prisma.job.count({ where: { deletedAt: null, duplicateOfId: { not: null } } }),
+    ]);
+
+    const byStatus = Object.fromEntries(byStatusRaw.map((r) => [r.status, r._count._all]));
+    const bySourceType = Object.fromEntries(bySourceTypeRaw.map((r) => [r.sourceType, r._count._all]));
+
+    return {
+      total,
+      bySourceType: {
+        USER_CREATED: bySourceType.USER_CREATED ?? 0,
+        IMPORTED: bySourceType.IMPORTED ?? 0,
+        SYNTHETIC: bySourceType.SYNTHETIC ?? 0,
+      },
+      byStatus: {
+        pendingReview: byStatus.PENDING_REVIEW ?? 0,
+        published: byStatus.ACTIVE ?? 0,
+        expired: byStatus.EXPIRED ?? 0,
+        closed: byStatus.CLOSED ?? 0,
+        draft: byStatus.DRAFT ?? 0,
+        paused: byStatus.PAUSED ?? 0,
+        rejected: byStatus.REJECTED ?? 0,
+      },
+      duplicate: duplicateCount,
+    };
+  }
+
+  // ---- Job sources (đặc tả JobHunter Phần 5) ----
+  listJobSources() {
+    return this.prisma.jobSource.findMany({ orderBy: { name: 'asc' } });
   }
 
   async setJobStatus(adminId: string, jobId: string, status: JobStatus) {
