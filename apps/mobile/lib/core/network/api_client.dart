@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:http/http.dart' as http;
 import '../auth/session.dart';
 import '../config/app_config.dart';
@@ -40,22 +41,36 @@ class ApiClient {
         if (session.accessToken != null) 'Authorization': 'Bearer ${session.accessToken}',
       };
 
-  Future<dynamic> _handle(Future<http.Response> Function() send, {bool allowRefresh = true}) async {
+  // Hotfix §10: log latency/status mỗi request ở debug build để tìm đúng request chậm/lỗi thay vì
+  // đoán - KHÔNG log ở release build (kDebugMode=false khi build APK release), KHÔNG log
+  // Authorization header/token/body (chỉ log method+path+thời gian+status, đúng yêu cầu không lộ
+  // secret). method/path chỉ dùng để log, không ảnh hưởng logic gọi request.
+  Future<dynamic> _handle(
+    Future<http.Response> Function() send, {
+    bool allowRefresh = true,
+    String method = '?',
+    String path = '?',
+  }) async {
+    final stopwatch = kDebugMode ? (Stopwatch()..start()) : null;
     http.Response res;
     try {
       res = await send().timeout(_timeout);
     } on TimeoutException {
+      _logApi(method, path, stopwatch, null, 'TIMEOUT');
       throw ApiException.timeout();
     } on SocketException {
+      _logApi(method, path, stopwatch, null, 'SOCKET_ERROR');
       throw ApiException.network();
     } on http.ClientException {
+      _logApi(method, path, stopwatch, null, 'CLIENT_ERROR');
       throw ApiException.network();
     }
+    _logApi(method, path, stopwatch, res.statusCode, null);
 
     if (res.statusCode == 401 && allowRefresh && session.refreshToken != null) {
       final refreshed = await _tryRefresh();
       if (refreshed) {
-        return _handle(send, allowRefresh: false);
+        return _handle(send, allowRefresh: false, method: method, path: path);
       }
       await session.logout();
       throw ApiException(401, 'Phiên đăng nhập đã hết.');
@@ -73,6 +88,13 @@ class ApiClient {
       message = rawMessage is List ? rawMessage.join(', ') : (rawMessage?.toString() ?? '');
     } catch (_) {}
     throw ApiException(res.statusCode, message);
+  }
+
+  void _logApi(String method, String path, Stopwatch? stopwatch, int? statusCode, String? errorKind) {
+    if (stopwatch == null) return; // release build (kDebugMode=false) - không log gì.
+    stopwatch.stop();
+    final status = errorKind ?? statusCode?.toString() ?? '?';
+    debugPrint('[API] $method $path ${stopwatch.elapsedMilliseconds}ms $status');
   }
 
   Future<bool> _tryRefresh() async {
@@ -94,25 +116,35 @@ class ApiClient {
   }
 
   Future<dynamic> get(String path, {Map<String, dynamic>? query}) {
-    return _handle(() => _http.get(_uri(path, query), headers: _headers()));
+    return _handle(() => _http.get(_uri(path, query), headers: _headers()), method: 'GET', path: path);
   }
 
   Future<dynamic> post(String path, {Map<String, dynamic>? body}) {
     return _handle(
       () => _http.post(_uri(path), headers: _headers(), body: body == null ? null : jsonEncode(body)),
       allowRefresh: true,
+      method: 'POST',
+      path: path,
     );
   }
 
   Future<dynamic> patch(String path, {Map<String, dynamic>? body}) {
-    return _handle(() => _http.patch(_uri(path), headers: _headers(), body: body == null ? null : jsonEncode(body)));
+    return _handle(
+      () => _http.patch(_uri(path), headers: _headers(), body: body == null ? null : jsonEncode(body)),
+      method: 'PATCH',
+      path: path,
+    );
   }
 
   Future<dynamic> put(String path, {Map<String, dynamic>? body}) {
-    return _handle(() => _http.put(_uri(path), headers: _headers(), body: body == null ? null : jsonEncode(body)));
+    return _handle(
+      () => _http.put(_uri(path), headers: _headers(), body: body == null ? null : jsonEncode(body)),
+      method: 'PUT',
+      path: path,
+    );
   }
 
   Future<dynamic> delete(String path) {
-    return _handle(() => _http.delete(_uri(path), headers: _headers()));
+    return _handle(() => _http.delete(_uri(path), headers: _headers()), method: 'DELETE', path: path);
   }
 }

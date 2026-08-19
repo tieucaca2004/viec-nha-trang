@@ -75,6 +75,13 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
     super.dispose();
   }
 
+  // Hotfix perf: 5 request ĐỘC LẬP (areas/cities/employerProfile/locations/me) trước đây await
+  // TUẦN TỰ - trên mạng LAN/WiFi thật, mỗi round-trip cộng dồn (vd 5 x 300ms = 1.5s+ chỉ riêng
+  // latency, chưa tính request nào chậm/lỗi làm các request SAU nó không bao giờ chạy) - đây là
+  // nguyên nhân thật của "spinner gần như đứng"/"Kết nối quá chậm" trên màn hồ sơ doanh nghiệp.
+  // Sửa: chạy song song bằng Future.wait (giảm tổng thời gian chờ xuống bằng request CHẬM NHẤT
+  // thay vì TỔNG cả 5 request), và 1 request lỗi không làm mất dữ liệu các request khác đã tải
+  // được (đặc tả §2/§7 hotfix).
   Future<void> _loadAreas() async {
     final jobsService = context.read<JobsService>();
     final profileService = context.read<EmployerProfileService>();
@@ -83,41 +90,64 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
       _loadingExisting = true;
       _error = null;
     });
+
+    final results = await Future.wait<Object?>([
+      _safeCall(jobsService.areas()),
+      _safeCall(jobsService.cities()),
+      _safeCall(profileService.getEmployerProfile()),
+      _safeCall(profileService.myEmployerLocations()),
+      _safeCall(authService.getMe()),
+    ]);
+    if (!mounted) return;
+
+    final areasResult = results[0];
+    final citiesResult = results[1];
+    final existingProfileResult = results[2];
+    final existingLocationsResult = results[3];
+    final meResult = results[4];
+
+    // Nếu có request lỗi, báo lỗi (đủ để người dùng bấm THỬ LẠI) - không chặn hiển thị phần dữ
+    // liệu đã tải thành công từ các request khác.
+    final errors = [areasResult, citiesResult, existingProfileResult, existingLocationsResult, meResult].whereType<ApiException>();
+    final firstError = errors.isEmpty ? null : errors.first;
+
+    setState(() {
+      if (areasResult is! ApiException) _areas = areasResult as List<Area>;
+      if (meResult is! ApiException) _me = meResult as Map<String, dynamic>?;
+      final cities = citiesResult is! ApiException ? citiesResult as List<Map<String, dynamic>> : const <Map<String, dynamic>>[];
+      if (cities.isNotEmpty) _cityId = cities.first['id'] as String;
+
+      final existingProfile = existingProfileResult is! ApiException ? existingProfileResult as Map<String, dynamic>? : null;
+      if (existingProfile != null) {
+        _businessNameController.text = (existingProfile['businessName'] as String?) ?? '';
+        _descriptionController.text = (existingProfile['description'] as String?) ?? '';
+      }
+
+      final existingLocations = existingLocationsResult is! ApiException ? existingLocationsResult as List : const [];
+      if (existingLocations.isNotEmpty) {
+        final loc = existingLocations.first as Map<String, dynamic>;
+        _hasExistingLocation = true;
+        _locationNameController.text = (loc['name'] as String?) ?? '';
+        _addressController.text = (loc['address'] as String?) ?? '';
+        _phoneController.text = (loc['phone'] as String?) ?? '';
+        _areaId = loc['areaId'] as String?;
+        _cityId = (loc['cityId'] as String?) ?? _cityId;
+        final lat = loc['latitude'];
+        final lng = loc['longitude'];
+        if (lat != null) _latitudeController.text = (lat as num).toStringAsFixed(6);
+        if (lng != null) _longitudeController.text = (lng as num).toStringAsFixed(6);
+      }
+
+      _error = firstError?.userMessage;
+      _loadingExisting = false;
+    });
+  }
+
+  Future<Object?> _safeCall(Future<Object?> future) async {
     try {
-      final areas = await jobsService.areas();
-      final cities = await jobsService.cities();
-      // Tải hồ sơ/cơ sở đã lưu (nếu có) để hiển thị lại đúng dữ liệu thật khi mở lại màn này,
-      // không để trống trắng như trước (yêu cầu "mở lại kiểm tra dữ liệu").
-      final existingProfile = await profileService.getEmployerProfile();
-      final existingLocations = await profileService.myEmployerLocations();
-      final me = await authService.getMe();
-      if (!mounted) return;
-      setState(() {
-        _areas = areas;
-        _me = me;
-        _cityId = cities.isNotEmpty ? cities.first['id'] as String : null;
-        if (existingProfile != null) {
-          _businessNameController.text = (existingProfile['businessName'] as String?) ?? '';
-          _descriptionController.text = (existingProfile['description'] as String?) ?? '';
-        }
-        if (existingLocations.isNotEmpty) {
-          final loc = existingLocations.first as Map<String, dynamic>;
-          _hasExistingLocation = true;
-          _locationNameController.text = (loc['name'] as String?) ?? '';
-          _addressController.text = (loc['address'] as String?) ?? '';
-          _phoneController.text = (loc['phone'] as String?) ?? '';
-          _areaId = loc['areaId'] as String?;
-          _cityId = (loc['cityId'] as String?) ?? _cityId;
-          final lat = loc['latitude'];
-          final lng = loc['longitude'];
-          if (lat != null) _latitudeController.text = (lat as num).toStringAsFixed(6);
-          if (lng != null) _longitudeController.text = (lng as num).toStringAsFixed(6);
-        }
-      });
+      return await future;
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.userMessage);
-    } finally {
-      if (mounted) setState(() => _loadingExisting = false);
+      return e;
     }
   }
 

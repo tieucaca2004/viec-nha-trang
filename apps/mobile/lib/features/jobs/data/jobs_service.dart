@@ -82,20 +82,38 @@ class JobsService {
     return await api.get('/jobs/$id') as Map<String, dynamic>;
   }
 
-  Future<List<JobCategory>> categories() async {
+  // Cache trong bộ nhớ (KHÔNG hard-code data - vẫn lấy từ backend, chỉ lấy 1 lần/phiên app thay vì
+  // gọi lại mỗi lần mở màn hình profile/form - đặc tả hotfix §5: "không tải toàn bộ dữ liệu Area
+  // nhiều lần", "KHÔNG hard-code lại danh sách Area nếu backend là source of truth". Area/City/
+  // Category gần như tĩnh trong 1 phiên sử dụng, không cần refetch mỗi lần build lại 1 form.
+  List<JobCategory>? _categoriesCache;
+  final Map<String, List<Area>> _areasCache = {}; // key = cityId ?? '' (rỗng = tất cả)
+  List<Map<String, dynamic>>? _citiesCache;
+
+  Future<List<JobCategory>> categories({bool forceRefresh = false}) async {
+    if (!forceRefresh && _categoriesCache != null) return _categoriesCache!;
     final res = await api.get('/categories') as List;
-    return res.map((e) => JobCategory.fromJson(e)).toList();
+    final result = res.map((e) => JobCategory.fromJson(e)).toList();
+    _categoriesCache = result;
+    return result;
   }
 
-  Future<List<Area>> areas({String? cityId}) async {
+  Future<List<Area>> areas({String? cityId, bool forceRefresh = false}) async {
+    final key = cityId ?? '';
+    if (!forceRefresh && _areasCache.containsKey(key)) return _areasCache[key]!;
     final res = await api.get('/areas', query: {'cityId': cityId}) as List;
-    return res.map((e) => Area.fromJson(e)).toList();
+    final result = res.map((e) => Area.fromJson(e)).toList();
+    _areasCache[key] = result;
+    return result;
   }
 
   /// V1 chỉ có 1 thành phố (Nha Trang), nhưng API vẫn trả về danh sách để sẵn sàng đa thành phố
   /// (đặc tả §36: không hard-code Nha Trang vào business logic).
-  Future<List<Map<String, dynamic>>> cities() async {
+  Future<List<Map<String, dynamic>>> cities({bool forceRefresh = false}) async {
+    if (!forceRefresh && _citiesCache != null) return _citiesCache!;
     final res = await api.get('/cities') as List;
-    return res.cast<Map<String, dynamic>>();
+    final result = res.cast<Map<String, dynamic>>();
+    _citiesCache = result;
+    return result;
   }
 }

@@ -29,6 +29,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _load();
   }
 
+  // Hotfix: /me (phone) và job-seeker-profile là 2 request ĐỘC LẬP - trước đây await tuần tự
+  // (profile trước, /me sau) trong CÙNG 1 try/catch khiến 1 request chậm/lỗi (vd timeout do mạng
+  // LAN/WiFi thật) làm request kia không bao giờ chạy, nên SĐT "biến mất" dù backend trả đúng dữ
+  // liệu - đây là nguyên nhân thật của cả 2 triệu chứng "không hiện SĐT" và "Kết nối quá chậm" báo
+  // cùng lúc. Sửa: chạy song song bằng Future.wait, bắt lỗi RIÊNG từng phần - phần nào có dữ liệu
+  // thì hiển thị ngay, phần nào lỗi thì báo lỗi riêng, không chặn lẫn nhau.
   Future<void> _load() async {
     final profileService = context.read<JobSeekerProfileService>();
     final authService = context.read<AuthService>();
@@ -36,18 +42,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _loading = true;
       _error = null;
     });
+
+    final results = await Future.wait<Object?>([
+      _safeCall(profileService.getJobSeekerProfile()),
+      _safeCall(authService.getMe()),
+    ]);
+    if (!mounted) return;
+
+    final profileResult = results[0];
+    final meResult = results[1];
+    setState(() {
+      if (profileResult is! ApiException) _profile = profileResult as Map<String, dynamic>?;
+      if (meResult is! ApiException) _me = meResult as Map<String, dynamic>?;
+      // Chỉ báo lỗi chặn UI khi CẢ HAI đều lỗi (không còn gì để hiển thị) - nếu 1 trong 2 thành
+      // công, vẫn hiển thị phần đó, lỗi phần còn lại không đáng để trắng cả màn hình.
+      _error = (profileResult is ApiException && meResult is ApiException) ? meResult : null;
+      _loading = false;
+    });
+  }
+
+  /// Bọc 1 Future để không throw ra ngoài Future.wait - trả về ApiException THAY VÌ ném lỗi, để
+  /// 1 request lỗi không huỷ luôn các request song song khác.
+  Future<Object?> _safeCall(Future<Object?> future) async {
     try {
-      final profile = await profileService.getJobSeekerProfile();
-      final me = await authService.getMe();
-      if (!mounted) return;
-      setState(() {
-        _profile = profile;
-        _me = me;
-      });
+      return await future;
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e);
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      return e;
     }
   }
 
@@ -104,7 +124,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: AsyncStateView<Map<String, dynamic>?>(
         loading: _loading,
         error: _error,
-        data: _loading ? null : (_profile ?? const <String, dynamic>{}),
+        // Bug thật phát hiện khi viết test cho hotfix này: trước đây `data` LUÔN non-null
+        // (`_profile ?? {}`) dù _error đã set, nên nhánh lỗi của AsyncStateView không bao giờ hiện
+        // được (builder bên dưới còn bỏ qua tham số data, tự đọc _profile/_me từ state) - _error
+        // là dead code, người dùng không bao giờ thấy nút THỬ LẠI dù cả 2 request đều lỗi. Sửa:
+        // chỉ coi là "có dữ liệu" khi ít nhất 1 trong 2 request thành công.
+        data: _loading ? null : ((_profile != null || _me != null) ? (_profile ?? const <String, dynamic>{}) : null),
         onRetry: _load,
         builder: (context, _) => ListView(
           padding: const EdgeInsets.all(16),
