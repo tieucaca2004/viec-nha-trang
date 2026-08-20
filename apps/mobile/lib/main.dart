@@ -18,8 +18,25 @@ import 'shared/services/push_service.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final session = Session();
+  // restore() CHỈ đọc local storage (không gọi network) - app phải mở được và cho duyệt việc
+  // ngay cả khi backend chậm/không khả dụng (đặc tả AUTH UX Part 5/11: guest browsing không phụ
+  // thuộc /me).
   await session.restore();
   runApp(VietNhaTrangApp(session: session));
+
+  // Đặc tả Part 5 case C/D: nếu có access token lưu sẵn, âm thầm xác thực lại NGAY (không await,
+  // không chặn runApp/UI) bằng đúng hạ tầng refresh-on-401 đã có sẵn trong ApiClient - access
+  // token còn hạn thì GET /me thành công, hết hạn thì ApiClient tự refresh bằng refresh token rồi
+  // thử lại; refresh cũng hỏng thì ApiClient tự session.logout() (xoá token cục bộ, chuyển về
+  // guest) - KHÔNG hiện lỗi báo động, người dùng vẫn duyệt việc bình thường. Không tạo ApiClient
+  // mới cho vòng đời sau đó (chỉ dùng 1 lần ở đây) - provider tree trong VietNhaTrangApp vẫn là
+  // nguồn ApiClient DUY NHẤT cho mọi widget khác.
+  if (session.accessToken != null) {
+    AuthService(ApiClient(session), session).refreshMe().catchError((_) {
+      // Lỗi (network/refresh token cũng hỏng) đã được ApiClient/Session xử lý an toàn ở trên -
+      // không cần làm gì thêm ở đây, không hiện lỗi cho người dùng lúc khởi động app.
+    });
+  }
 }
 
 /// VIỆC NHA TRANG - ứng dụng tuyển dụng/tìm việc khu vực Nha Trang (đặc tả Phase 3).

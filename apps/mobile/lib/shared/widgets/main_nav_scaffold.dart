@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth/session.dart';
 import '../../features/applications/presentation/applications_screen.dart';
+import '../../features/auth/presentation/guest_account_screen.dart';
 import '../../features/employer/presentation/employer_applicants_overview_screen.dart';
 import '../../features/employer/presentation/employer_dashboard_screen.dart';
 import '../../features/employer/presentation/employer_home_screen.dart';
@@ -33,28 +34,44 @@ class _SeekerNav extends StatefulWidget {
 class _SeekerNavState extends State<_SeekerNav> {
   int _index = 0;
 
-  static const _screens = [
+  static const _guestScreens = [HomeScreen(), GuestAccountScreen()];
+  static const _guestDestinations = [
+    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Việc làm'),
+    NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Tài khoản'),
+  ];
+
+  static const _loggedInScreens = [
     HomeScreen(),
     SavedJobsScreen(),
     ApplicationsScreen(),
     NotificationsScreen(),
     ProfileScreen(),
   ];
+  static const _loggedInDestinations = [
+    NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Việc làm'),
+    NavigationDestination(icon: Icon(Icons.favorite_border), selectedIcon: Icon(Icons.favorite), label: 'Đã lưu'),
+    NavigationDestination(icon: Icon(Icons.send_outlined), selectedIcon: Icon(Icons.send), label: 'Ứng tuyển'),
+    NavigationDestination(icon: Icon(Icons.notifications_none), selectedIcon: Icon(Icons.notifications), label: 'Thông báo'),
+    NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Cá nhân'),
+  ];
 
   @override
   Widget build(BuildContext context) {
+    // Đặc tả AUTH UX Part 2/3: khách (chưa đăng nhập) chỉ thấy 2 tab (Việc làm + Tài khoản, tab
+    // sau là lời mời xác thực - đặc tả Part 3 "Guest users must NOT... manage applications... save
+    // jobs..."). Session là ChangeNotifier nên khi requireAuthentication() thành công ở bất kỳ đâu
+    // (vd. màn chi tiết việc), widget này tự rebuild với đủ 5 tab NGAY, không cần thoát vào lại app.
+    final loggedIn = context.watch<Session>().isLoggedIn;
+    final screens = loggedIn ? _loggedInScreens : _guestScreens;
+    final destinations = loggedIn ? _loggedInDestinations : _guestDestinations;
+    if (_index >= screens.length) _index = 0;
+
     return Scaffold(
-      body: IndexedStack(index: _index, children: _screens),
+      body: IndexedStack(index: _index, children: screens),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Việc làm'),
-          NavigationDestination(icon: Icon(Icons.favorite_border), selectedIcon: Icon(Icons.favorite), label: 'Đã lưu'),
-          NavigationDestination(icon: Icon(Icons.send_outlined), selectedIcon: Icon(Icons.send), label: 'Ứng tuyển'),
-          NavigationDestination(icon: Icon(Icons.notifications_none), selectedIcon: Icon(Icons.notifications), label: 'Thông báo'),
-          NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Cá nhân'),
-        ],
+        destinations: destinations,
       ),
     );
   }

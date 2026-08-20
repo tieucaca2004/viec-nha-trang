@@ -68,8 +68,10 @@ void main() {
       }),
     );
 
+    await session.setTokens(access: 'fake-access', refresh: 'fake-refresh', roles: ['JOB_SEEKER']);
     await tester.pumpWidget(MultiProvider(
       providers: [
+        ChangeNotifierProvider<Session>.value(value: session),
         Provider<ApiClient>(create: (_) => api),
         Provider<JobsService>(create: (_) => JobsService(api)),
         Provider<ApplicationsService>(create: (_) => ApplicationsService(api)),
@@ -139,8 +141,10 @@ void main() {
       }),
     );
 
+    await session.setTokens(access: 'fake-access', refresh: 'fake-refresh', roles: ['JOB_SEEKER']);
     await tester.pumpWidget(MultiProvider(
       providers: [
+        ChangeNotifierProvider<Session>.value(value: session),
         Provider<ApiClient>(create: (_) => api),
         Provider<JobsService>(create: (_) => JobsService(api)),
         Provider<ApplicationsService>(create: (_) => ApplicationsService(api)),

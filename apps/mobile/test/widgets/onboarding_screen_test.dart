@@ -7,12 +7,13 @@ import 'package:viec_nha_trang/core/auth/session.dart';
 import 'package:viec_nha_trang/core/network/api_client.dart';
 import 'package:viec_nha_trang/features/applications/data/applications_service.dart';
 import 'package:viec_nha_trang/features/auth/data/auth_service.dart';
-import 'package:viec_nha_trang/features/auth/presentation/email_register_screen.dart';
 import 'package:viec_nha_trang/features/auth/presentation/onboarding_screen.dart';
 import 'package:viec_nha_trang/features/auth/presentation/phone_login_screen.dart';
 import 'package:viec_nha_trang/features/employer/data/employer_jobs_service.dart';
+import 'package:viec_nha_trang/features/employer/presentation/employer_entry_screen.dart';
 import 'package:viec_nha_trang/features/employer/data/employer_profile_service.dart';
 import 'package:viec_nha_trang/features/jobs/data/jobs_service.dart';
+import 'package:viec_nha_trang/features/jobs/presentation/home_screen.dart';
 import 'package:viec_nha_trang/features/notifications/data/notifications_service.dart';
 import 'package:viec_nha_trang/features/profile/data/job_seeker_profile_service.dart';
 import 'package:viec_nha_trang/features/saved_jobs/data/saved_jobs_service.dart';
@@ -81,9 +82,10 @@ void main() {
       expect(find.text('TUYỂN NGƯỜI'), findsOneWidget);
     });
 
-    // Sửa lỗi §1 (phase kế tiếp): chưa đăng nhập giờ đi tới đăng ký bằng EMAIL, không còn qua
-    // SMS OTP nữa (SMS OTP chỉ dùng để đăng nhập lại tài khoản cũ, qua liên kết trong màn này).
-    testWidgets('chưa đăng nhập: chọn TÌM VIỆC điều hướng tới đăng ký email với intendedRole=JOB_SEEKER',
+    // OTP-FIRST + ZERO-FRICTION ENTRY (đặc tả AUTH UX Part 2/3): khách (chưa đăng nhập) bấm TÌM
+    // VIỆC phải vào thẳng danh sách việc làm ngay - KHÔNG bắt đăng ký/đăng nhập/OTP/SĐT/email chỉ
+    // để duyệt việc. Auth chỉ được hỏi đúng lúc 1 hành động cần tài khoản (ứng tuyển/lưu việc...).
+    testWidgets('chưa đăng nhập: chọn TÌM VIỆC vào thẳng danh sách việc làm, KHÔNG hiện màn đăng ký/đăng nhập',
         (tester) async {
       final session = Session(storage: InMemoryTokenStorage());
       await tester.pumpWidget(_wrap(session));
@@ -91,11 +93,18 @@ void main() {
       await tester.tap(find.text('TÌM VIỆC'));
       await tester.pumpAndSettle();
 
-      final registerScreen = tester.widget<EmailRegisterScreen>(find.byType(EmailRegisterScreen));
-      expect(registerScreen.intendedRole, 'JOB_SEEKER');
+      expect(find.byType(HomeScreen), findsOneWidget);
+      expect(find.byType(PhoneLoginScreen), findsNothing);
+      expect(session.isLoggedIn, isFalse);
+      // Tab "Tài khoản" (guest) thay cho ProfileScreen thật - không có tab Đã lưu/Ứng tuyển/Thông
+      // báo (đặc tả Part 3: guest không quản lý các mục này).
+      expect(find.text('Tài khoản'), findsOneWidget);
+      expect(find.text('Đã lưu'), findsNothing);
     });
 
-    testWidgets('chưa đăng nhập: chọn TUYỂN NGƯỜI điều hướng tới đăng ký email với intendedRole=EMPLOYER',
+    // Đặc tả AUTH UX Part 4: khách bấm TUYỂN NGƯỜI được xem thông tin trước (EmployerEntryScreen),
+    // không bị bắt xác thực ngay - chỉ hỏi khi thật sự bấm đăng tin.
+    testWidgets('chưa đăng nhập: chọn TUYỂN NGƯỜI điều hướng tới màn giới thiệu cho nhà tuyển dụng',
         (tester) async {
       final session = Session(storage: InMemoryTokenStorage());
       await tester.pumpWidget(_wrap(session));
@@ -103,8 +112,9 @@ void main() {
       await tester.tap(find.text('TUYỂN NGƯỜI'));
       await tester.pumpAndSettle();
 
-      final registerScreen = tester.widget<EmailRegisterScreen>(find.byType(EmailRegisterScreen));
-      expect(registerScreen.intendedRole, 'EMPLOYER');
+      expect(find.byType(EmployerEntryScreen), findsOneWidget);
+      expect(find.byType(PhoneLoginScreen), findsNothing);
+      expect(session.isLoggedIn, isFalse);
     });
 
     // Sửa lỗi navigation §1: đã đăng nhập rồi quay lại Home (OnboardingScreen luôn là route gốc)

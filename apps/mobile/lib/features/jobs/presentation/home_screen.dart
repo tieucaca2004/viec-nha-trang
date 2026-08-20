@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import '../../../core/auth/session.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/models/job.dart';
 import '../../../shared/widgets/async_state_view.dart';
+import '../../../shared/widgets/auth_prompt.dart';
 import '../../applications/data/applications_service.dart';
 import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
@@ -72,6 +74,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadAppliedIds() async {
+    // Khách (chưa đăng nhập) không có gì để tải - gọi /applications/me sẽ chỉ tốn 1 request 401
+    // vô ích (đặc tả AUTH UX Part 11: guest browsing không phụ thuộc bất kỳ API cần đăng nhập nào).
+    if (!context.read<Session>().isLoggedIn) return;
     try {
       final applications = await context.read<ApplicationsService>().listMine();
       if (!mounted) return;
@@ -82,6 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadSavedIds() async {
+    if (!context.read<Session>().isLoggedIn) return;
     try {
       final saved = await context.read<SavedJobsService>().listSaved();
       if (!mounted) return;
@@ -92,23 +98,30 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // Đặc tả AUTH UX Part 3/6: khách bấm Lưu -> hỏi xác thực (KHÔNG âm thầm lưu lạc quan rồi lỗi
+  // 401 mới báo) -> xác thực xong tự tiếp tục lưu đúng job này, không cần bấm lại.
   Future<void> _toggleSave(Job job) async {
     final wasSaved = _savedJobIds.contains(job.id);
-    setState(() {
-      _savedJobIds = wasSaved ? ({..._savedJobIds}..remove(job.id)) : {..._savedJobIds, job.id};
-    });
     try {
-      final savedJobsService = context.read<SavedJobsService>();
-      if (wasSaved) {
-        await savedJobsService.unsave(job.id);
-      } else {
-        await savedJobsService.save(job.id);
-      }
+      final saved = await runWithAuth<bool>(
+        context,
+        reason: 'Để lưu việc này, bạn cần xác thực số điện thoại.',
+        action: () async {
+          final savedJobsService = context.read<SavedJobsService>();
+          if (wasSaved) {
+            await savedJobsService.unsave(job.id);
+          } else {
+            await savedJobsService.save(job.id);
+          }
+          return !wasSaved;
+        },
+      );
+      if (saved == null || !mounted) return;
+      setState(() {
+        _savedJobIds = saved ? {..._savedJobIds, job.id} : ({..._savedJobIds}..remove(job.id));
+      });
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() {
-        _savedJobIds = wasSaved ? {..._savedJobIds, job.id} : ({..._savedJobIds}..remove(job.id));
-      });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
     }
   }
@@ -227,8 +240,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _apply(Job job) async {
     try {
-      await context.read<ApplicationsService>().apply(job.id);
-      if (!mounted) return;
+      final applied = await runWithAuth<bool>(
+        context,
+        reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.',
+        action: () async {
+          await context.read<ApplicationsService>().apply(job.id);
+          return true;
+        },
+      );
+      if (applied != true || !mounted) return;
       setState(() => _appliedJobIds = {..._appliedJobIds, job.id});
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
     } on ApiException catch (e) {

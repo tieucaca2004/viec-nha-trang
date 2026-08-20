@@ -7,7 +7,12 @@ import 'otp_screen.dart';
 /// Đăng nhập bằng SĐT + OTP (đặc tả §5 Phase 3).
 class PhoneLoginScreen extends StatefulWidget {
   final String intendedRole;
-  const PhoneLoginScreen({super.key, this.intendedRole = 'JOB_SEEKER'});
+  // Chế độ "xác thực theo ngữ cảnh" (đặc tả AUTH UX Part 6) - khi true, sau khi OTP đúng chỉ pop
+  // về đúng 1 lần với kết quả true (KHÔNG điều hướng sang MainNavScaffold) để caller (vd. màn chi
+  // tiết việc) tự tiếp tục hành động ban đầu (ứng tuyển/lưu việc), không mất ngữ cảnh, không bị đá
+  // về Home. Mặc định false = hành vi đăng nhập bình thường (vào thẳng MainNavScaffold).
+  final bool returnOnSuccess;
+  const PhoneLoginScreen({super.key, this.intendedRole = 'JOB_SEEKER', this.returnOnSuccess = false});
 
   @override
   State<PhoneLoginScreen> createState() => _PhoneLoginScreenState();
@@ -27,11 +32,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
       final authService = context.read<AuthService>();
       await authService.requestOtp(_phoneController.text.trim());
       if (!mounted) return;
-      Navigator.of(context).push(
+      final result = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
-          builder: (_) => OtpScreen(phone: _phoneController.text.trim(), intendedRole: widget.intendedRole),
+          builder: (_) => OtpScreen(
+            phone: _phoneController.text.trim(),
+            intendedRole: widget.intendedRole,
+            returnOnSuccess: widget.returnOnSuccess,
+          ),
         ),
       );
+      // Xác thực theo ngữ cảnh (Part 6): OTP đúng ở chế độ returnOnSuccess chỉ pop OtpScreen với
+      // true - lan truyền tiếp 1 lần pop nữa để đóng luôn màn nhập SĐT này, trả kết quả về đúng
+      // nơi đã gọi requireAuthentication().
+      if (widget.returnOnSuccess && result == true && mounted) {
+        Navigator.of(context).pop(true);
+      }
     } on ApiException catch (e) {
       setState(() => _error = e.userMessage);
     } finally {
@@ -42,7 +57,10 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Đăng nhập')),
+      // Đặc tả Part 8: dùng ngôn ngữ "xác thực" thay vì khái niệm "đăng nhập" khi đây là 1 bước
+      // xác thực theo ngữ cảnh (guest thực hiện hành động cần tài khoản), không phải màn đăng
+      // nhập độc lập đầu tiên của app.
+      appBar: AppBar(title: Text(widget.returnOnSuccess ? 'Xác thực số điện thoại' : 'Đăng nhập')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),

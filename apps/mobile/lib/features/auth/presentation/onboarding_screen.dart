@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'email_register_screen.dart';
 import '../../../core/auth/session.dart';
 import '../../../shared/widgets/main_nav_scaffold.dart';
+import '../../employer/presentation/employer_entry_screen.dart';
 
 /// Home/root của app (đặc tả Phase 3 §6, sửa lỗi navigation §1): logo + slogan + chọn nhu cầu.
 /// Đây LUÔN là route đầu tiên của app (xem main.dart), kể cả khi đã đăng nhập - để mọi màn hình
@@ -59,21 +59,26 @@ class OnboardingScreen extends StatelessWidget {
     );
   }
 
-  // Đã đăng nhập -> vào thẳng nav của vai trò đó (không qua lại màn đăng ký/đăng nhập). Chưa
-  // đăng nhập -> đăng ký bằng EMAIL (đặc tả §1 phase kế tiếp: không dùng SMS OTP để tạo tài
-  // khoản nữa). Tài khoản cũ tạo qua SĐT vẫn đăng nhập được qua liên kết trong
-  // EmailRegisterScreen ("Đăng nhập bằng SĐT") - KHÔNG xoá bỏ PhoneLoginScreen.
+  // OTP-FIRST + ZERO-FRICTION ENTRY (đặc tả AUTH UX): KHÔNG bắt tạo tài khoản/đăng nhập chỉ để
+  // duyệt việc. "TÌM VIỆC" luôn vào thẳng MainNavScaffold - khách (chưa đăng nhập) vẫn xem/tìm/lọc
+  // việc bình thường (đặc tả Part 2/3), auth chỉ được hỏi đúng lúc 1 hành động THỰC SỰ cần tài
+  // khoản (ứng tuyển, lưu việc...), qua requireAuthentication() tại đúng màn hình đó - xem
+  // shared/widgets/auth_prompt.dart. "TUYỂN NGƯỜI" cho khách xem thông tin trước
+  // (EmployerEntryScreen, đặc tả Part 4), chỉ hỏi xác thực khi bấm "ĐĂNG TIN NGAY".
   void _selectRole(BuildContext context, String intendedRole) {
     final session = context.read<Session>();
+    if (intendedRole == 'JOB_SEEKER') {
+      if (session.isLoggedIn) session.setActiveRole('JOB_SEEKER');
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MainNavScaffold()));
+      return;
+    }
+
+    // EMPLOYER
     if (session.isLoggedIn) {
-      session.setActiveRole(intendedRole);
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const MainNavScaffold()),
-      );
+      session.setActiveRole('EMPLOYER');
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const MainNavScaffold()));
     } else {
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => EmailRegisterScreen(intendedRole: intendedRole)),
-      );
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EmployerEntryScreen()));
     }
   }
 }

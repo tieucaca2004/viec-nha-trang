@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../../core/auth/session.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/widgets/async_state_view.dart';
+import '../../../shared/widgets/auth_prompt.dart';
 import '../../applications/data/applications_service.dart';
 import '../../profile/data/job_seeker_profile_service.dart';
 import '../../profile/presentation/job_seeker_profile_form_screen.dart';
@@ -45,21 +47,35 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final jobsService = context.read<JobsService>();
     final applicationsService = context.read<ApplicationsService>();
     final savedJobsService = context.read<SavedJobsService>();
+    final isLoggedIn = context.read<Session>().isLoggedIn;
     try {
+      // GET /jobs/:id là public (OptionalJwtAuthGuard) - khách xem chi tiết việc bình thường
+      // (đặc tả AUTH UX Part 3). isApplied/isSaved chỉ có ý nghĩa khi đã đăng nhập - KHÔNG gọi
+      // /applications/me hay /saved-jobs cho khách (Part 11: guest browsing không phụ thuộc API
+      // cần đăng nhập) - lỗi 401 ở đây trước đây còn làm hỏng luôn cả trang chi tiết (job load
+      // được nhưng bị _error đè lên do listMine() ném 401 chung 1 try/catch).
       final job = await jobsService.getById(widget.jobId);
-      final applications = await applicationsService.listMine();
+      bool applied = false;
       bool saved = false;
-      try {
-        final savedList = await savedJobsService.listSaved();
-        saved = savedList.any((s) => (s as Map)['jobId']?.toString() == widget.jobId);
-      } catch (_) {
-        // Không chặn trang chi tiết nếu không tải được danh sách đã lưu - nút lưu vẫn hoạt động,
-        // chỉ là trạng thái ban đầu có thể chưa chính xác.
+      if (isLoggedIn) {
+        try {
+          final applications = await applicationsService.listMine();
+          applied = applications.any((a) => a.job?.id == widget.jobId);
+        } catch (_) {
+          // Không chặn trang chi tiết nếu không tải được trạng thái đã ứng tuyển.
+        }
+        try {
+          final savedList = await savedJobsService.listSaved();
+          saved = savedList.any((s) => (s as Map)['jobId']?.toString() == widget.jobId);
+        } catch (_) {
+          // Không chặn trang chi tiết nếu không tải được danh sách đã lưu - nút lưu vẫn hoạt động,
+          // chỉ là trạng thái ban đầu có thể chưa chính xác.
+        }
       }
       if (!mounted) return;
       setState(() {
         _job = job;
-        _applied = applications.any((a) => a.job?.id == widget.jobId);
+        _applied = applied;
         _saved = saved;
       });
     } on ApiException catch (e) {
@@ -70,6 +86,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   Future<void> _apply() async {
+    // Đặc tả AUTH UX Part 6: khách bấm ỨNG TUYỂN -> hỏi xác thực TRƯỚC bất kỳ bước nào khác (kể
+    // cả kiểm tra hồ sơ, vì getJobSeekerProfile() cần đăng nhập) -> xác thực xong tự quay lại
+    // đúng đây tiếp tục ứng tuyển, không phải tìm lại job/bấm lại từ Home.
+    if (!context.read<Session>().isLoggedIn) {
+      final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.');
+      if (!ok || !mounted) return;
+    }
+
     final profileService = context.read<JobSeekerProfileService>();
     final applicationsService = context.read<ApplicationsService>();
     final profile = await profileService.getJobSeekerProfile();
@@ -116,6 +140,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
           }
         }
+      } else if (e.isUnauthorized) {
+        // Phiên hết hạn giữa chừng (đặc tả Part 7) - hỏi xác thực lại rồi tự thử ứng tuyển lại
+        // đúng 1 lần, không bắt user thoát ra tìm lại job.
+        if (!mounted) return;
+        final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.');
+        if (ok && mounted) {
+          try {
+            await applicationsService.apply(widget.jobId);
+            if (!mounted) return;
+            setState(() => _applied = true);
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
+          } on ApiException catch (e2) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
+          }
+        }
       } else {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
@@ -145,20 +185,24 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Future<void> _toggleSave() async {
     if (_togglingSave) return;
     final wasSaved = _saved;
-    setState(() {
-      _saved = !wasSaved;
-      _togglingSave = true;
-    });
+    setState(() => _togglingSave = true);
     try {
-      final savedJobsService = context.read<SavedJobsService>();
-      if (wasSaved) {
-        await savedJobsService.unsave(widget.jobId);
-      } else {
-        await savedJobsService.save(widget.jobId);
-      }
+      final saved = await runWithAuth<bool>(
+        context,
+        reason: 'Để lưu việc này, bạn cần xác thực số điện thoại.',
+        action: () async {
+          final savedJobsService = context.read<SavedJobsService>();
+          if (wasSaved) {
+            await savedJobsService.unsave(widget.jobId);
+          } else {
+            await savedJobsService.save(widget.jobId);
+          }
+          return !wasSaved;
+        },
+      );
+      if (saved != null && mounted) setState(() => _saved = saved);
     } on ApiException catch (e) {
       if (!mounted) return;
-      setState(() => _saved = wasSaved);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
     } finally {
       if (mounted) setState(() => _togglingSave = false);
