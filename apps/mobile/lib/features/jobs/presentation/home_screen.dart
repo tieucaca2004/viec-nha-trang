@@ -105,7 +105,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final saved = await runWithAuth<bool>(
         context,
-        reason: 'Để lưu việc này, bạn cần xác thực số điện thoại.',
+        reason: 'Để lưu việc này, bạn cần đăng nhập hoặc tạo tài khoản.',
         action: () async {
           final savedJobsService = context.read<SavedJobsService>();
           if (wasSaved) {
@@ -242,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final applied = await runWithAuth<bool>(
         context,
-        reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.',
+        reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.',
         action: () async {
           await context.read<ApplicationsService>().apply(job.id);
           return true;

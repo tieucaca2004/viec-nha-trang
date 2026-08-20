@@ -5,12 +5,30 @@ import '../../../core/auth/session.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/widgets/main_nav_scaffold.dart';
 
-/// Nhập mã xác minh email để hoàn tất đăng ký (đặc tả §1 phase kế tiếp) - cùng cấu trúc
+/// Nhập mã xác minh email (EMAIL OTP) để hoàn tất đăng ký hoặc đăng nhập - cùng cấu trúc
 /// navigation với OtpScreen (giữ Home làm route gốc, không đẩy chồng nhiều bản Home).
+///
+/// Backend dùng CHUNG 1 cặp endpoint (`/auth/register/email/request|verify`) cho cả 2 việc:
+/// email chưa có tài khoản -> tạo mới; email đã có tài khoản -> đăng nhập (xem
+/// AuthService.verifyEmailAndRegister ở backend). [isLogin] chỉ đổi WORDING cho đúng ngữ cảnh
+/// người dùng đang ở, không đổi endpoint.
 class EmailVerifyScreen extends StatefulWidget {
   final String email;
   final String intendedRole;
-  const EmailVerifyScreen({super.key, required this.email, this.intendedRole = 'JOB_SEEKER'});
+
+  /// Chế độ "xác thực theo ngữ cảnh": khi true, xác minh xong chỉ pop(true) về nơi gọi để tiếp
+  /// tục đúng hành động ban đầu (ứng tuyển/lưu việc/đăng tin), KHÔNG tự điều hướng sang
+  /// MainNavScaffold và KHÔNG tự đổi vai trò - việc đó do caller quyết định.
+  final bool returnOnSuccess;
+  final bool isLogin;
+
+  const EmailVerifyScreen({
+    super.key,
+    required this.email,
+    this.intendedRole = 'JOB_SEEKER',
+    this.returnOnSuccess = false,
+    this.isLogin = false,
+  });
 
   @override
   State<EmailVerifyScreen> createState() => _EmailVerifyScreenState();
@@ -31,6 +49,13 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
       final authService = context.read<AuthService>();
       final session = context.read<Session>();
       await authService.verifyEmailAndRegister(widget.email, _codeController.text.trim());
+
+      // Xác thực theo ngữ cảnh: chỉ cần có tài khoản, caller sẽ tự tiếp tục hành động ban đầu.
+      if (widget.returnOnSuccess) {
+        if (!mounted) return;
+        Navigator.of(context).pop(true);
+        return;
+      }
 
       if (widget.intendedRole == 'EMPLOYER' && !session.isEmployer) {
         await authService.becomeEmployer();
@@ -68,7 +93,7 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Xác minh email')),
+      appBar: AppBar(title: Text(widget.isLogin ? 'Đăng nhập' : 'Xác minh email')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(

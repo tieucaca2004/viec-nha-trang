@@ -2,48 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/auth/session.dart';
 import '../../core/network/api_exception.dart';
-import '../../features/auth/presentation/phone_login_screen.dart';
+import '../../features/auth/presentation/auth_gate_screen.dart';
 
-/// Xác thực THEO NGỮ CẢNH (đặc tả AUTH UX Part 6/Part 8) - dùng khi 1 khách (chưa đăng nhập) bấm
-/// vào 1 hành động THỰC SỰ cần tài khoản (ứng tuyển, lưu việc, đăng tin...). Hiện lý do ngắn gọn +
-/// 2 lựa chọn (TIẾP TỤC/ĐỂ SAU) trước khi đẩy sang màn OTP - không đẩy thẳng vào form đăng ký như
-/// một "Đăng nhập" chung chung, và không bắt user hiểu khái niệm access token/refresh token/phiên.
-/// Trả về true nếu xác thực thành công (OTP đúng) - PhoneLoginScreen ở chế độ [returnOnSuccess]
-/// chỉ pop về đây, KHÔNG điều hướng sang MainNavScaffold, để caller tự tiếp tục đúng hành động ban
-/// đầu (đặc tả Part 6 - không mất ngữ cảnh, không bị đá về Home).
-Future<bool> requireAuthentication(BuildContext context, {required String reason}) async {
-  final proceed = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) => SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(reason, style: const TextStyle(fontSize: 16), textAlign: TextAlign.center),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () => Navigator.of(sheetContext).pop(true),
-              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-              child: const Text('TIẾP TỤC'),
-            ),
-            const SizedBox(height: 8),
-            TextButton(
-              onPressed: () => Navigator.of(sheetContext).pop(false),
-              child: const Text('ĐỂ SAU'),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  if (proceed != true) return false;
-  if (!context.mounted) return false;
-
+/// Xác thực THEO NGỮ CẢNH - dùng khi 1 khách (chưa đăng nhập) bấm vào 1 hành động THỰC SỰ cần tài
+/// khoản (ứng tuyển, lưu việc, đăng tin...). Giải thích lý do rồi để người dùng CHỌN đăng ký (email
+/// + email OTP) hay đăng nhập (tài khoản sẵn có) - xem AuthGateScreen.
+///
+/// Bug thật đã sửa: trước đây hàm này đẩy thẳng sang PhoneLoginScreen, nên mọi hành động - kể cả
+/// "Đăng tin ngay" của nhà tuyển dụng mới - đều hiện màn "Xác thực số điện thoại", biến phone OTP
+/// thành cửa đăng ký mặc định thay vì email OTP.
+///
+/// Trả về true nếu xác thực thành công - các màn con chạy ở chế độ `returnOnSuccess` nên chỉ pop
+/// về đây, KHÔNG điều hướng sang MainNavScaffold, để caller tự tiếp tục đúng hành động ban đầu
+/// (không mất ngữ cảnh, không bị đá về Home).
+Future<bool> requireAuthentication(
+  BuildContext context, {
+  required String reason,
+  String intendedRole = 'JOB_SEEKER',
+}) async {
   final authenticated = await Navigator.of(context).push<bool>(
-    MaterialPageRoute(builder: (_) => const PhoneLoginScreen(returnOnSuccess: true)),
+    MaterialPageRoute(builder: (_) => AuthGateScreen(reason: reason, intendedRole: intendedRole)),
   );
   return authenticated == true;
 }

@@ -5,30 +5,39 @@ import '../../../core/network/api_exception.dart';
 import 'email_verify_screen.dart';
 import 'phone_login_screen.dart';
 
-/// Đăng ký tài khoản bằng email (đặc tả §1 phase kế tiếp) - thay thế SMS OTP làm bước tạo tài
-/// khoản chính. Người dùng đã có tài khoản qua số điện thoại từ trước vẫn đăng nhập được bình
-/// thường qua liên kết "Đăng nhập bằng số điện thoại" bên dưới (PhoneLoginScreen KHÔNG đổi).
-class EmailRegisterScreen extends StatefulWidget {
+/// Màn ĐĂNG NHẬP thật của app - OTP-first, KHÔNG mật khẩu.
+///
+/// Kiến trúc xác thực hiện có (không thay đổi, chỉ dùng đúng):
+/// - Email OTP (`/auth/register/email/request|verify`): backend tìm user theo email - đã có tài
+///   khoản thì ĐĂNG NHẬP, chưa có thì tạo mới. Đây là đường chính vì tài khoản mới đăng ký bằng
+///   email (xem EmailRegisterScreen).
+/// - Phone OTP (`/auth/otp/request|verify`): giữ nguyên cho tài khoản cũ tạo bằng SĐT từ trước.
+///   KHÔNG phải bước đăng ký mặc định, chỉ là lối đăng nhập phụ ở đây.
+///
+/// Màn này KHÔNG bao giờ là màn đầu tiên khi mở app - chỉ mở khi người dùng chủ động chọn Đăng
+/// nhập, hoặc khi một hành động cần tài khoản (xem shared/widgets/auth_prompt.dart).
+class LoginScreen extends StatefulWidget {
   final String intendedRole;
 
-  /// Xác thực theo ngữ cảnh: đăng ký xong pop(true) về nơi gọi để tiếp tục đúng hành động ban đầu
-  /// (ứng tuyển/lưu việc/đăng tin) thay vì điều hướng về MainNavScaffold - xem EmailVerifyScreen.
+  /// Xác thực theo ngữ cảnh: đăng nhập xong pop(true) về nơi gọi để tiếp tục hành động ban đầu.
   final bool returnOnSuccess;
 
-  const EmailRegisterScreen({
-    super.key,
-    this.intendedRole = 'JOB_SEEKER',
-    this.returnOnSuccess = false,
-  });
+  const LoginScreen({super.key, this.intendedRole = 'JOB_SEEKER', this.returnOnSuccess = false});
 
   @override
-  State<EmailRegisterScreen> createState() => _EmailRegisterScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
+class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   bool _loading = false;
   String? _error;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -36,19 +45,19 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
       _error = null;
     });
     try {
-      final authService = context.read<AuthService>();
-      await authService.requestEmailVerification(_emailController.text.trim());
+      final email = _emailController.text.trim();
+      await context.read<AuthService>().requestEmailVerification(email);
       if (!mounted) return;
       final result = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => EmailVerifyScreen(
-            email: _emailController.text.trim(),
+            email: email,
             intendedRole: widget.intendedRole,
             returnOnSuccess: widget.returnOnSuccess,
+            isLogin: true,
           ),
         ),
       );
-      // Lan truyền kết quả xác thực về đúng nơi đã gọi (AuthGateScreen -> requireAuthentication).
       if (widget.returnOnSuccess && result == true && mounted) {
         Navigator.of(context).pop(true);
       }
@@ -59,10 +68,24 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
     }
   }
 
+  Future<void> _loginWithPhone() async {
+    final result = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PhoneLoginScreen(
+          intendedRole: widget.intendedRole,
+          returnOnSuccess: widget.returnOnSuccess,
+        ),
+      ),
+    );
+    if (widget.returnOnSuccess && result == true && mounted) {
+      Navigator.of(context).pop(true);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Đăng ký')),
+      appBar: AppBar(title: const Text('Đăng nhập')),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -72,7 +95,10 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
             children: [
               const Text('VIỆC NHA TRANG', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text('Đăng ký bằng email để bắt đầu', style: TextStyle(color: Colors.black54)),
+              const Text(
+                'Nhập email của bạn, chúng tôi sẽ gửi mã xác minh để đăng nhập.',
+                style: TextStyle(color: Colors.black54),
+              ),
               const SizedBox(height: 24),
               TextField(
                 controller: _emailController,
@@ -94,14 +120,12 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
                 style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
                 child: _loading
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('GỬI MÃ XÁC MINH', style: TextStyle(fontSize: 16)),
+                    : const Text('GỬI MÃ ĐĂNG NHẬP', style: TextStyle(fontSize: 16)),
               ),
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => PhoneLoginScreen(intendedRole: widget.intendedRole)),
-                ),
-                child: const Text('Đã có tài khoản qua số điện thoại? Đăng nhập bằng SĐT'),
+                onPressed: _loading ? null : _loginWithPhone,
+                child: const Text('Tài khoản cũ tạo bằng số điện thoại? Đăng nhập bằng SĐT'),
               ),
             ],
           ),

@@ -90,7 +90,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     // cả kiểm tra hồ sơ, vì getJobSeekerProfile() cần đăng nhập) -> xác thực xong tự quay lại
     // đúng đây tiếp tục ứng tuyển, không phải tìm lại job/bấm lại từ Home.
     if (!context.read<Session>().isLoggedIn) {
-      final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.');
+      final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.');
       if (!ok || !mounted) return;
     }
 
@@ -144,7 +144,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         // Phiên hết hạn giữa chừng (đặc tả Part 7) - hỏi xác thực lại rồi tự thử ứng tuyển lại
         // đúng 1 lần, không bắt user thoát ra tìm lại job.
         if (!mounted) return;
-        final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần xác thực số điện thoại.');
+        final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.');
         if (ok && mounted) {
           try {
             await applicationsService.apply(widget.jobId);
@@ -189,7 +189,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     try {
       final saved = await runWithAuth<bool>(
         context,
-        reason: 'Để lưu việc này, bạn cần xác thực số điện thoại.',
+        reason: 'Để lưu việc này, bạn cần đăng nhập hoặc tạo tài khoản.',
         action: () async {
           final savedJobsService = context.read<SavedJobsService>();
           if (wasSaved) {

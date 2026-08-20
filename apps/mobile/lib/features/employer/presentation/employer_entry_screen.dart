@@ -4,6 +4,7 @@ import '../../../core/auth/session.dart';
 import '../../../shared/widgets/auth_prompt.dart';
 import '../../../shared/widgets/main_nav_scaffold.dart';
 import '../../auth/data/auth_service.dart';
+import 'post_job_wizard_screen.dart';
 
 /// Điểm vào cho nhà tuyển dụng CHƯA có tài khoản (đặc tả AUTH UX Part 4) - cho xem thông tin
 /// (cách hoạt động) TRƯỚC, chỉ hỏi xác thực đúng lúc họ bấm bắt đầu đăng tin - không bắt xác thực
@@ -21,18 +22,31 @@ class _EmployerEntryScreenState extends State<EmployerEntryScreen> {
   Future<void> _startPosting() async {
     setState(() => _starting = true);
     try {
-      final ok = await requireAuthentication(
-        context,
-        reason: 'Để đăng tin tuyển dụng, bạn cần xác thực số điện thoại.',
-      );
-      if (!ok || !mounted) return;
-
       final session = context.read<Session>();
+      // Khách chưa có tài khoản: cho CHỌN đăng ký (email + email OTP) hay đăng nhập - không ép
+      // xác thực SĐT ở bước này (phone verification là yêu cầu riêng của backend khi thực sự tạo
+      // tin, PostJobWizardScreen đã tự xử lý qua showPhoneVerificationSheet).
+      if (!session.isLoggedIn) {
+        final ok = await requireAuthentication(
+          context,
+          reason: 'Để đăng tin tuyển dụng, bạn cần đăng nhập hoặc tạo tài khoản.',
+          intendedRole: 'EMPLOYER',
+        );
+        if (!ok || !mounted) return;
+      }
+
       final authService = context.read<AuthService>();
       if (!session.isEmployer) {
         await authService.becomeEmployer();
       }
       await session.setActiveRole('EMPLOYER');
+
+      // Đi THẲNG vào wizard đăng tin - đúng việc người dùng vừa bấm, không quay lại Home/nav rồi
+      // bắt họ tìm nút đăng tin lần nữa. Xong wizard mới đưa về nav của nhà tuyển dụng.
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const PostJobWizardScreen()),
+      );
 
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
