@@ -49,22 +49,46 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
     _loadOptions();
   }
 
+  // Bug thật trên Beta (bước 1 trắng trơn, TIẾP TỤC bị mờ): trước đây categories và locations được
+  // await TUẦN TỰ trong CÙNG 1 try/catch, và setState chỉ chạy SAU cả hai. Chỉ cần
+  // myEmployerLocations() lỗi (nhà tuyển dụng mới chưa có cơ sở, mạng chập chờn...) là _categories
+  // KHÔNG BAO GIỜ được gán, dù GET /categories đã trả về 37 ngành nghề hợp lệ - bước 1 render 1
+  // Wrap rỗng. Sửa: chạy song song, tách lỗi từng phần, phần nào lấy được thì hiển thị phần đó.
   Future<void> _loadOptions() async {
+    setState(() {
+      _loadingOptions = true;
+      _error = null;
+    });
     final jobsService = context.read<JobsService>();
     final employerProfileService = context.read<EmployerProfileService>();
+
+    final results = await Future.wait<Object?>([
+      _safeCall(jobsService.categories()),
+      _safeCall(employerProfileService.myEmployerLocations()),
+    ]);
+    if (!mounted) return;
+
+    final categoriesResult = results[0];
+    final locationsResult = results[1];
+    setState(() {
+      if (categoriesResult is List<JobCategory>) _categories = categoriesResult;
+      if (locationsResult is List) {
+        _locations = locationsResult;
+        _locationId = locationsResult.isNotEmpty ? locationsResult.first['id'] : null;
+      }
+      // Chỉ coi là lỗi chặn khi danh sách ngành nghề - dữ liệu BẮT BUỘC của bước 1 - không tải
+      // được. Thiếu cơ sở làm việc không chặn wizard: bước chọn địa điểm đã có sẵn hướng dẫn thêm
+      // cơ sở mới.
+      _error = categoriesResult is ApiException ? categoriesResult.userMessage : null;
+      _loadingOptions = false;
+    });
+  }
+
+  Future<Object?> _safeCall(Future<Object?> future) async {
     try {
-      final categories = await jobsService.categories();
-      final locations = await employerProfileService.myEmployerLocations();
-      if (!mounted) return;
-      setState(() {
-        _categories = categories;
-        _locations = locations;
-        _locationId = locations.isNotEmpty ? locations.first['id'] : null;
-      });
+      return await future;
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.userMessage);
-    } finally {
-      if (mounted) setState(() => _loadingOptions = false);
+      return e;
     }
   }
 
@@ -212,19 +236,39 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
         ),
       );
 
+  // Không bao giờ để bước này trắng trơn: tải lỗi -> báo lỗi + nút THỬ LẠI; backend trả rỗng ->
+  // nói rõ đang cập nhật danh mục (KHÔNG tự bịa danh sách ngành nghề).
   Widget _stepCategory() => _stepWrapper(
         'Bạn cần tuyển vị trí nào?',
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _categories
-              .map((c) => ChoiceChip(
-                    label: Text(c.name),
-                    selected: _categoryId == c.id,
-                    onSelected: (_) => setState(() => _categoryId = c.id),
-                  ))
-              .toList(),
-        ),
+        _categories.isEmpty
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Chi tiết lỗi từ API hiển thị 1 lần duy nhất ở thanh dưới cùng (_error) - ở đây
+                  // chỉ nói rõ bước này đang thiếu gì và cho thao tác thử lại.
+                  const Text(
+                    'Chưa tải được danh sách ngành nghề.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: _loadOptions,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('THỬ LẠI'),
+                  ),
+                ],
+              )
+            : Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _categories
+                    .map((c) => ChoiceChip(
+                          label: Text(c.name),
+                          selected: _categoryId == c.id,
+                          onSelected: (_) => setState(() => _categoryId = c.id),
+                        ))
+                    .toList(),
+              ),
       );
 
   Widget _stepHeadcount() => _stepWrapper(

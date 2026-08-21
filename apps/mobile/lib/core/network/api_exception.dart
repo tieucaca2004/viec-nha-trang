@@ -4,7 +4,12 @@ class ApiException implements Exception {
   final int statusCode;
   final String rawMessage;
 
-  ApiException(this.statusCode, this.rawMessage);
+  /// Số giây phải chờ, đọc từ header `Retry-After` khi bị rate limit (429). Backend
+  /// (@nestjs/throttler) CÓ gửi header này - dùng nó để báo đúng "chờ N giây" thay vì câu chung
+  /// chung "thử lại sau ít phút" khiến người dùng tưởng app hỏng. null nếu server không gửi.
+  final int? retryAfterSeconds;
+
+  ApiException(this.statusCode, this.rawMessage, {this.retryAfterSeconds});
 
   factory ApiException.network() => ApiException(0, 'network');
   factory ApiException.timeout() => ApiException(-1, 'timeout');
@@ -24,7 +29,13 @@ class ApiException implements Exception {
     if (isUnauthorized) return 'Phiên đăng nhập đã hết. Vui lòng đăng nhập lại.';
     if (isForbidden) return 'Bạn không có quyền thực hiện thao tác này.';
     if (isNotFound) return 'Không tìm thấy dữ liệu.';
-    if (isRateLimited) return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.';
+    if (isRateLimited) {
+      final wait = retryAfterSeconds;
+      if (wait != null && wait > 0) {
+        return 'Bạn đã yêu cầu quá nhiều lần. Vui lòng chờ $wait giây rồi thử lại.';
+      }
+      return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau ít phút.';
+    }
     if (isValidation) return rawMessage.isNotEmpty ? rawMessage : 'Vui lòng kiểm tra thông tin.';
     if (isServerError) return 'Hệ thống đang bận. Vui lòng thử lại sau.';
     return 'Đã có lỗi xảy ra. Vui lòng thử lại.';

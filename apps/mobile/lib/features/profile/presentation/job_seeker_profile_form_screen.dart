@@ -53,18 +53,31 @@ class _JobSeekerProfileFormScreenState extends State<JobSeekerProfileFormScreen>
       _error = null;
     });
     final jobsService = context.read<JobsService>();
+
+    // Cùng lớp lỗi với wizard đăng tin: trước đây categories/areas await tuần tự trong 1 try/catch
+    // nên /areas lỗi là mất luôn danh sách ngành nghề đã tải được. Chạy song song + tách lỗi.
+    final results = await Future.wait<Object?>([
+      _safeCall(jobsService.categories()),
+      _safeCall(jobsService.areas()),
+    ]);
+    if (!mounted) return;
+
+    final categoriesResult = results[0];
+    final areasResult = results[1];
+    setState(() {
+      if (categoriesResult is List<JobCategory>) _categories = categoriesResult;
+      if (areasResult is List<Area>) _areas = areasResult;
+      final failed = results.whereType<ApiException>().toList();
+      _error = failed.isEmpty ? null : failed.first.userMessage;
+      _loadingOptions = false;
+    });
+  }
+
+  Future<Object?> _safeCall(Future<Object?> future) async {
     try {
-      final categories = await jobsService.categories();
-      final areas = await jobsService.areas();
-      if (!mounted) return;
-      setState(() {
-        _categories = categories;
-        _areas = areas;
-      });
+      return await future;
     } on ApiException catch (e) {
-      if (mounted) setState(() => _error = e.userMessage);
-    } finally {
-      if (mounted) setState(() => _loadingOptions = false);
+      return e;
     }
   }
 

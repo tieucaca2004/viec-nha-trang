@@ -87,7 +87,14 @@ class ApiClient {
       final rawMessage = body['message'];
       message = rawMessage is List ? rawMessage.join(', ') : (rawMessage?.toString() ?? '');
     } catch (_) {}
-    throw ApiException(res.statusCode, message);
+
+    // 429: đọc Retry-After (giây) để hiển thị đúng thời gian chờ thật cho người dùng.
+    int? retryAfterSeconds;
+    if (res.statusCode == 429) {
+      final header = res.headers['retry-after'];
+      if (header != null) retryAfterSeconds = int.tryParse(header.trim());
+    }
+    throw ApiException(res.statusCode, message, retryAfterSeconds: retryAfterSeconds);
   }
 
   void _logApi(String method, String path, Stopwatch? stopwatch, int? statusCode, String? errorKind) {

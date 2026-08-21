@@ -115,13 +115,59 @@ describe('Email verification registration - §1', () => {
       .expect(201);
   });
 
-  it('email đã verified rồi thì request đăng ký lại bị từ chối (hướng dẫn đăng nhập)', async () => {
-    const addr = uniqueEmail('already-verified');
+  // Regression (bug thật trên Beta): email đã verified PHẢI xin được mã lần nữa - đó chính là luồng
+  // ĐĂNG NHẬP bằng email OTP. Trước đây bước này trả 400 "Email này đã được đăng ký. Vui lòng đăng
+  // nhập.", khiến đăng nhập bằng email bất khả thi; người dùng bấm lại nhiều lần thì chạm rate
+  // limit và nhận nhầm thông báo "Bạn thao tác quá nhanh".
+  it('email đã verified vẫn xin được mã và ĐĂNG NHẬP được (không tạo tài khoản trùng)', async () => {
+    const addr = uniqueEmail('login-existing');
     await request(app.getHttpServer()).post('/api/v1/auth/register/email/request').send({ email: addr }).expect(201);
-    const code = email.getLastCode(addr);
-    await request(app.getHttpServer()).post('/api/v1/auth/register/email/verify').send({ email: addr, code }).expect(201);
+    const firstCode = email.getLastCode(addr);
+    const registerRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register/email/verify')
+      .send({ email: addr, code: firstCode })
+      .expect(201);
+    const userAfterRegister = await prisma.user.findUniqueOrThrow({ where: { email: addr } });
 
-    await request(app.getHttpServer()).post('/api/v1/auth/register/email/request').send({ email: addr }).expect(400);
+    // Đăng nhập lại bằng chính email đó: xin mã -> 201 (KHÔNG còn 400).
+    await request(app.getHttpServer()).post('/api/v1/auth/register/email/request').send({ email: addr }).expect(201);
+    const loginCode = email.getLastCode(addr);
+    expect(loginCode).not.toBe(firstCode);
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register/email/verify')
+      .send({ email: addr, code: loginCode })
+      .expect(201);
+    expect(loginRes.body.accessToken).toBeTruthy();
+    // Access token KHÔNG có jti (chỉ refresh token mới có - xem issueTokens), nên 2 lần đăng nhập
+    // trong cùng 1 giây sinh ra access token giống hệt nhau; refresh token thì luôn khác nhau.
+    expect(loginRes.body.refreshToken).toBeTruthy();
+    expect(loginRes.body.refreshToken).not.toBe(registerRes.body.refreshToken);
+
+    // Vẫn đúng 1 tài khoản - đăng nhập lại không tạo user mới.
+    const users = await prisma.user.findMany({ where: { email: addr } });
+    expect(users).toHaveLength(1);
+    expect(users[0].id).toBe(userAfterRegister.id);
+  });
+
+  // Anti-enumeration: phản hồi cho email ĐÃ đăng ký và CHƯA đăng ký phải giống hệt nhau, để không
+  // ai dò được email nào có tài khoản (trước đây 400 vs 201 làm lộ điều này).
+  it('request mã cho email đã đăng ký và chưa đăng ký trả về phản hồi giống hệt nhau', async () => {
+    const registered = uniqueEmail('enum-registered');
+    await request(app.getHttpServer()).post('/api/v1/auth/register/email/request').send({ email: registered }).expect(201);
+    const code = email.getLastCode(registered);
+    await request(app.getHttpServer()).post('/api/v1/auth/register/email/verify').send({ email: registered, code }).expect(201);
+
+    const registeredRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register/email/request')
+      .send({ email: registered })
+      .expect(201);
+    const unknownRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register/email/request')
+      .send({ email: uniqueEmail('enum-unknown') })
+      .expect(201);
+
+    expect(registeredRes.body).toEqual(unknownRes.body);
   });
 
   it('email không hợp lệ bị validation từ chối (400) trước khi chạm tới service', async () => {
