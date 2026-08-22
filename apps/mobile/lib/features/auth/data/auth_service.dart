@@ -22,6 +22,11 @@ class AuthService {
   // Đăng ký tài khoản bằng email (đặc tả §1 phase kế tiếp) - KHÔNG dùng SMS OTP cho bước tạo
   // tài khoản nữa. Luồng đăng nhập bằng SĐT (requestOtp/verifyOtp ở trên) vẫn giữ nguyên cho
   // người dùng đã có tài khoản qua phone từ trước.
+  //
+  // Route RIÊNG với đăng nhập (requestLoginEmailOtp/verifyLoginEmailOtp bên dưới) dù backend xử
+  // lý cùng 1 logic nghiệp vụ - lý do DUY NHẤT là tách throttle bucket: bug thật trên Beta là
+  // đăng ký/gửi lại mã tiêu hết hạn mức rồi làm màn Đăng nhập bị 429 dù tài khoản hợp lệ, vì cả
+  // 2 trước đây gọi chung 1 route.
   Future<int> requestEmailVerification(String email) async {
     final res = await api.post('/auth/register/email/request', body: {'email': email});
     return res['expiresInSeconds'] ?? 600;
@@ -29,6 +34,21 @@ class AuthService {
 
   Future<void> verifyEmailAndRegister(String email, String code) async {
     final res = await api.post('/auth/register/email/verify', body: {'email': email, 'code': code});
+    await session.setTokens(access: res['accessToken'], refresh: res['refreshToken']);
+    await refreshMe();
+  }
+
+  // Đăng nhập bằng email OTP - endpoint RIÊNG (/auth/login/email/request|verify), hạn mức
+  // throttle RIÊNG với đăng ký ở trên. Backend chạy đúng cùng logic (email đã có tài khoản thì
+  // đăng nhập, chưa có thì tạo mới) nên hành vi cuối cùng giống hệt requestEmailVerification/
+  // verifyEmailAndRegister - chỉ khác route để không ăn chung bucket rate limit.
+  Future<int> requestLoginEmailOtp(String email) async {
+    final res = await api.post('/auth/login/email/request', body: {'email': email});
+    return res['expiresInSeconds'] ?? 600;
+  }
+
+  Future<void> verifyLoginEmailOtp(String email, String code) async {
+    final res = await api.post('/auth/login/email/verify', body: {'email': email, 'code': code});
     await session.setTokens(access: res['accessToken'], refresh: res['refreshToken']);
     await refreshMe();
   }

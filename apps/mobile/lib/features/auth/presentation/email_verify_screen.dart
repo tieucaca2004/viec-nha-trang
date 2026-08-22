@@ -3,15 +3,18 @@ import 'package:provider/provider.dart';
 import '../data/auth_service.dart';
 import '../../../core/auth/session.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/otp_cooldown.dart';
 import '../../../shared/widgets/main_nav_scaffold.dart';
 
 /// Nhập mã xác minh email (EMAIL OTP) để hoàn tất đăng ký hoặc đăng nhập - cùng cấu trúc
 /// navigation với OtpScreen (giữ Home làm route gốc, không đẩy chồng nhiều bản Home).
 ///
-/// Backend dùng CHUNG 1 cặp endpoint (`/auth/register/email/request|verify`) cho cả 2 việc:
-/// email chưa có tài khoản -> tạo mới; email đã có tài khoản -> đăng nhập (xem
-/// AuthService.verifyEmailAndRegister ở backend). [isLogin] chỉ đổi WORDING cho đúng ngữ cảnh
-/// người dùng đang ở, không đổi endpoint.
+/// [isLogin] không chỉ đổi wording - nó chọn ĐÚNG cặp endpoint + cooldown bucket: đăng ký dùng
+/// `/auth/register/email/request|verify` (OtpCooldown.emailRegister), đăng nhập dùng
+/// `/auth/login/email/request|verify` (OtpCooldown.emailLogin). Backend chạy cùng 1 logic
+/// nghiệp vụ (email chưa có tài khoản -> tạo mới; email đã có -> đăng nhập) nhưng route/hạn mức
+/// throttle tách riêng - sửa bug thật: trước đây dùng chung route nên đăng ký làm đăng nhập bị
+/// 429 dù tài khoản hợp lệ.
 class EmailVerifyScreen extends StatefulWidget {
   final String email;
   final String intendedRole;
@@ -40,6 +43,9 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
   bool _resending = false;
   String? _error;
 
+  // Đăng ký và đăng nhập dùng 2 bucket cooldown RIÊNG (xem docstring EmailVerifyScreen).
+  OtpCooldown get _cooldown => widget.isLogin ? OtpCooldown.emailLogin : OtpCooldown.emailRegister;
+
   Future<void> _submit() async {
     setState(() {
       _loading = true;
@@ -48,7 +54,11 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
     try {
       final authService = context.read<AuthService>();
       final session = context.read<Session>();
-      await authService.verifyEmailAndRegister(widget.email, _codeController.text.trim());
+      if (widget.isLogin) {
+        await authService.verifyLoginEmailOtp(widget.email, _codeController.text.trim());
+      } else {
+        await authService.verifyEmailAndRegister(widget.email, _codeController.text.trim());
+      }
 
       // Xác thực theo ngữ cảnh: chỉ cần có tài khoản, caller sẽ tự tiếp tục hành động ban đầu.
       if (widget.returnOnSuccess) {
@@ -75,15 +85,24 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
   }
 
   Future<void> _resend() async {
+    // "Gửi lại mã" bắn đúng route (đăng ký hoặc đăng nhập) bị giới hạn 3 lần/60s theo IP - phải
+    // tôn trọng đúng cooldown bucket của route đó (xem _cooldown ở trên).
+    if (_resending || _cooldown.isActive) return;
     setState(() {
       _resending = true;
       _error = null;
     });
     try {
-      await context.read<AuthService>().requestEmailVerification(widget.email);
+      final authService = context.read<AuthService>();
+      if (widget.isLogin) {
+        await authService.requestLoginEmailOtp(widget.email);
+      } else {
+        await authService.requestEmailVerification(widget.email);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gửi lại mã xác minh.')));
     } on ApiException catch (e) {
+      if (e.isRateLimited) _cooldown.start(e.retryAfterSeconds ?? 60);
       setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _resending = false);
@@ -122,11 +141,17 @@ class _EmailVerifyScreenState extends State<EmailVerifyScreen> {
                   : const Text('XÁC NHẬN', style: TextStyle(fontSize: 16)),
             ),
             const SizedBox(height: 8),
-            TextButton(
-              onPressed: _resending ? null : _resend,
-              child: _resending
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                  : const Text('Gửi lại mã'),
+            ValueListenableBuilder<int>(
+              valueListenable: _cooldown.remainingSeconds,
+              builder: (context, remaining, _) {
+                final locked = remaining > 0;
+                return TextButton(
+                  onPressed: (_resending || locked) ? null : _resend,
+                  child: _resending
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                      : Text(locked ? 'Gửi lại mã sau $remaining giây' : 'Gửi lại mã'),
+                );
+              },
             ),
           ],
         ),

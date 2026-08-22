@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/auth_service.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/otp_cooldown.dart';
 import 'otp_screen.dart';
 
 /// Đăng nhập bằng SĐT + OTP (đặc tả §5 Phase 3).
@@ -24,6 +25,8 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
   String? _error;
 
   Future<void> _submit() async {
+    // OTP qua SMS có bucket rate limit riêng (route /auth/otp/request) - xem OtpCooldown.
+    if (_loading || OtpCooldown.phone.isActive) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -48,6 +51,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
         Navigator.of(context).pop(true);
       }
     } on ApiException catch (e) {
+      if (e.isRateLimited) OtpCooldown.phone.start(e.retryAfterSeconds ?? 60);
       setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -85,12 +89,21 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen> {
                 Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _loading ? null : _submit,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('GỬI MÃ OTP', style: TextStyle(fontSize: 16)),
+              ValueListenableBuilder<int>(
+                valueListenable: OtpCooldown.phone.remainingSeconds,
+                builder: (context, remaining, _) {
+                  final locked = remaining > 0;
+                  return FilledButton(
+                    onPressed: (_loading || locked) ? null : _submit,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
+                    child: _loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(
+                            locked ? 'GỬI LẠI SAU $remaining GIÂY' : 'GỬI MÃ OTP',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                  );
+                },
               ),
             ],
           ),

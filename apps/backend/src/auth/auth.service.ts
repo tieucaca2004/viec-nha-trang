@@ -90,9 +90,11 @@ export class AuthService {
   // SmsProvider/OtpCode vẫn giữ nguyên, chỉ dùng cho xác minh số điện thoại khi cần (§3) và cho
   // đăng nhập lại bằng phone OTP (verifyOtp ở trên - KHÔNG bị thay đổi hành vi).
 
-  // Gửi mã OTP qua email cho CẢ đăng ký lẫn ĐĂNG NHẬP - cùng một thao tác "chứng minh bạn sở hữu
-  // email này", và verifyEmailAndRegister() bên dưới vốn đã xử lý sẵn cả 2 trường hợp (email chưa
-  // có tài khoản -> tạo mới; email đã có -> đăng nhập).
+  // Gửi mã OTP qua email - dùng chung logic nghiệp vụ cho CẢ đăng ký lẫn ĐĂNG NHẬP (cùng một thao
+  // tác "chứng minh bạn sở hữu email này"), gọi từ 2 route KHÁC NHAU với 2 hạn mức throttle KHÁC
+  // NHAU (POST /auth/register/email/request và POST /auth/login/email/request - xem
+  // auth.controller.ts) để đăng ký và đăng nhập không còn ăn chung 1 bucket rate limit. verifyEmailAndRegister()
+  // bên dưới xử lý sẵn cả 2 trường hợp (email chưa có tài khoản -> tạo mới; email đã có -> đăng nhập).
   //
   // Trước đây hàm này chặn email đã verified bằng lỗi 400 "Email này đã được đăng ký. Vui lòng đăng
   // nhập." vì endpoint chỉ phục vụ đăng ký. Khi app có màn Đăng nhập bằng email OTP (kiến trúc
@@ -101,7 +103,8 @@ export class AuthService {
   // tác quá nhanh" - đúng lỗi đã tái hiện được trên Beta. Bỏ guard này còn làm phản hồi ĐỒNG NHẤT
   // cho email đã/chưa đăng ký, nên chống dò tài khoản (account enumeration) tốt hơn trước.
   //
-  // Cooldown gửi lại và rate limit theo route giữ NGUYÊN - không nới lỏng bất kỳ giới hạn nào.
+  // Cooldown gửi lại (theo EMAIL, không theo IP/route) và rate limit theo route giữ NGUYÊN -
+  // không nới lỏng bất kỳ giới hạn nào.
   async requestEmailVerification(email: string): Promise<{ expiresInSeconds: number }> {
     const existing = await this.prisma.user.findUnique({ where: { email } });
 

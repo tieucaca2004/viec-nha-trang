@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/auth_service.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/otp_cooldown.dart';
 import 'email_verify_screen.dart';
 import 'phone_login_screen.dart';
 
@@ -31,6 +32,8 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
   String? _error;
 
   Future<void> _submit() async {
+    // Route + hạn mức RIÊNG với màn Đăng nhập (xem OtpCooldown.emailRegister vs .emailLogin).
+    if (_loading || OtpCooldown.emailRegister.isActive) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -53,6 +56,7 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
         Navigator.of(context).pop(true);
       }
     } on ApiException catch (e) {
+      if (e.isRateLimited) OtpCooldown.emailRegister.start(e.retryAfterSeconds ?? 60);
       setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -89,12 +93,21 @@ class _EmailRegisterScreenState extends State<EmailRegisterScreen> {
                 Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _loading ? null : _submit,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('GỬI MÃ XÁC MINH', style: TextStyle(fontSize: 16)),
+              ValueListenableBuilder<int>(
+                valueListenable: OtpCooldown.emailRegister.remainingSeconds,
+                builder: (context, remaining, _) {
+                  final locked = remaining > 0;
+                  return FilledButton(
+                    onPressed: (_loading || locked) ? null : _submit,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
+                    child: _loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(
+                            locked ? 'GỬI LẠI SAU $remaining GIÂY' : 'GỬI MÃ XÁC MINH',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                  );
+                },
               ),
               const SizedBox(height: 8),
               TextButton(

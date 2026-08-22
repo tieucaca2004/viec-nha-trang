@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../data/auth_service.dart';
 import '../../../core/network/api_exception.dart';
+import '../../../core/network/otp_cooldown.dart';
 import 'email_verify_screen.dart';
 import 'phone_login_screen.dart';
 
 /// Màn ĐĂNG NHẬP thật của app - OTP-first, KHÔNG mật khẩu.
 ///
-/// Kiến trúc xác thực hiện có (không thay đổi, chỉ dùng đúng):
-/// - Email OTP (`/auth/register/email/request|verify`): backend tìm user theo email - đã có tài
-///   khoản thì ĐĂNG NHẬP, chưa có thì tạo mới. Đây là đường chính vì tài khoản mới đăng ký bằng
-///   email (xem EmailRegisterScreen).
+/// Kiến trúc xác thực hiện có:
+/// - Email OTP đăng nhập (`/auth/login/email/request|verify`): route + hạn mức throttle RIÊNG
+///   với đăng ký (xem AuthService.requestLoginEmailOtp) - sửa bug thật: trước đây đăng nhập dùng
+///   chung route với đăng ký nên vài lần bấm ở màn Đăng ký làm màn Đăng nhập bị 429 (rate limit)
+///   dù tài khoản hợp lệ. Backend tìm user theo email - đã có tài khoản thì ĐĂNG NHẬP, chưa có
+///   thì tạo mới (cùng logic nghiệp vụ với đăng ký, chỉ khác route để tách throttle bucket).
 /// - Phone OTP (`/auth/otp/request|verify`): giữ nguyên cho tài khoản cũ tạo bằng SĐT từ trước.
 ///   KHÔNG phải bước đăng ký mặc định, chỉ là lối đăng nhập phụ ở đây.
 ///
@@ -40,13 +43,16 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    // Đang trong thời gian bị server chặn (429) thì KHÔNG bắn thêm request nào nữa - bấm lúc này
+    // chắc chắn nhận 429 và chỉ làm người dùng tưởng app hỏng.
+    if (_loading || OtpCooldown.emailLogin.isActive) return;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
       final email = _emailController.text.trim();
-      await context.read<AuthService>().requestEmailVerification(email);
+      await context.read<AuthService>().requestLoginEmailOtp(email);
       if (!mounted) return;
       final result = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
@@ -62,6 +68,9 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).pop(true);
       }
     } on ApiException catch (e) {
+      // Rate limit: khoá nút đúng số giây server báo qua Retry-After. Không tự động gửi lại.
+      // Thiếu header thì lấy trọn cửa sổ throttle (60s) - thà chờ dư còn hơn bấm vào 429 tiếp.
+      if (e.isRateLimited) OtpCooldown.emailLogin.start(e.retryAfterSeconds ?? 60);
       setState(() => _error = e.userMessage);
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -115,12 +124,21 @@ class _LoginScreenState extends State<LoginScreen> {
                 Text(_error!, style: const TextStyle(color: Colors.red)),
               ],
               const SizedBox(height: 20),
-              FilledButton(
-                onPressed: _loading ? null : _submit,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
-                child: _loading
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const Text('GỬI MÃ ĐĂNG NHẬP', style: TextStyle(fontSize: 16)),
+              ValueListenableBuilder<int>(
+                valueListenable: OtpCooldown.emailLogin.remainingSeconds,
+                builder: (context, remaining, _) {
+                  final locked = remaining > 0;
+                  return FilledButton(
+                    onPressed: (_loading || locked) ? null : _submit,
+                    style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 18)),
+                    child: _loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                        : Text(
+                            locked ? 'GỬI LẠI SAU $remaining GIÂY' : 'GỬI MÃ ĐĂNG NHẬP',
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                  );
+                },
               ),
               const SizedBox(height: 8),
               TextButton(

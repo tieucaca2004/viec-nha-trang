@@ -85,9 +85,14 @@ void main() {
       if (path.endsWith('/categories') || path.endsWith('/areas') || path.endsWith('/cities')) {
         return jsonResponse([], 200);
       }
-      // Đăng ký + đăng nhập đều đi qua EMAIL OTP (backend dùng chung endpoint này).
+      // Đăng ký + đăng nhập đều đi qua EMAIL OTP, nhưng qua 2 route/throttle bucket RIÊNG (xem
+      // otp_cooldown.dart) - EmailRegisterScreen gọi register/email/*, LoginScreen gọi login/email/*.
       if (path.endsWith('/auth/register/email/request')) return jsonResponse({'expiresInSeconds': 600}, 201);
       if (path.endsWith('/auth/register/email/verify')) {
+        return jsonResponse({'accessToken': 'acc-1', 'refreshToken': 'ref-1'}, 201);
+      }
+      if (path.endsWith('/auth/login/email/request')) return jsonResponse({'expiresInSeconds': 600}, 201);
+      if (path.endsWith('/auth/login/email/verify')) {
         return jsonResponse({'accessToken': 'acc-1', 'refreshToken': 'ref-1'}, 201);
       }
       if (path.endsWith('/auth/otp/request')) return jsonResponse({'expiresInSeconds': 300}, 201);

@@ -20,6 +20,14 @@ const OTP_REQUEST_THROTTLE_LIMIT = Number(process.env.OTP_REQUEST_THROTTLE_LIMIT
 const OTP_VERIFY_THROTTLE_LIMIT = Number(process.env.OTP_VERIFY_THROTTLE_LIMIT ?? 5);
 const EMAIL_REQUEST_THROTTLE_LIMIT = Number(process.env.EMAIL_VERIFICATION_REQUEST_THROTTLE_LIMIT ?? 3);
 const EMAIL_VERIFY_THROTTLE_LIMIT = Number(process.env.EMAIL_VERIFICATION_VERIFY_THROTTLE_LIMIT ?? 5);
+// Bug thật trên Beta (xem auth.service.ts): đăng ký và đăng nhập bằng email OTP trước đây dùng
+// CHUNG route /auth/register/email/request nên CHUNG luôn hạn mức 3 request/60s/IP - vài lần
+// bấm "Gửi lại mã"/thử đăng ký là tiêu hết hạn mức của người khác đang đăng nhập trên cùng
+// mạng NAT/proxy. Tách route + hạn mức RIÊNG cho đăng nhập (/auth/login/email/request|verify)
+// để 2 luồng không còn ăn chung bucket - vẫn cùng logic nghiệp vụ bên dưới (AuthService đã tự xử
+// lý "email có tài khoản -> đăng nhập, chưa có -> tạo mới" từ trước, không đổi hành vi đó).
+const EMAIL_LOGIN_REQUEST_THROTTLE_LIMIT = Number(process.env.EMAIL_LOGIN_REQUEST_THROTTLE_LIMIT ?? 3);
+const EMAIL_LOGIN_VERIFY_THROTTLE_LIMIT = Number(process.env.EMAIL_LOGIN_VERIFY_THROTTLE_LIMIT ?? 5);
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -75,6 +83,22 @@ export class AuthController {
   @Throttle({ default: { limit: EMAIL_VERIFY_THROTTLE_LIMIT, ttl: 60_000 } })
   @Post('register/email/verify')
   verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmailAndRegister(dto.email, dto.code);
+  }
+
+  // ---------- Đăng nhập bằng email OTP - route + hạn mức RIÊNG với đăng ký ở trên ----------
+  // Cùng service method (verifyEmailAndRegister đã xử lý cả login lẫn tạo tài khoản mới theo
+  // đúng 1 nguyên lý "chứng minh sở hữu email này ngay bây giờ") - chỉ khác throttle bucket, để
+  // các lần bấm ở màn Đăng ký không còn làm cạn hạn mức của màn Đăng nhập và ngược lại.
+  @Throttle({ default: { limit: EMAIL_LOGIN_REQUEST_THROTTLE_LIMIT, ttl: 60_000 } })
+  @Post('login/email/request')
+  requestLoginEmailOtp(@Body() dto: RequestEmailVerificationDto) {
+    return this.authService.requestEmailVerification(dto.email);
+  }
+
+  @Throttle({ default: { limit: EMAIL_LOGIN_VERIFY_THROTTLE_LIMIT, ttl: 60_000 } })
+  @Post('login/email/verify')
+  verifyLoginEmailOtp(@Body() dto: VerifyEmailDto) {
     return this.authService.verifyEmailAndRegister(dto.email, dto.code);
   }
 
