@@ -79,6 +79,10 @@ jobs:
           EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: "0"
           EMAIL_VERIFICATION_REQUEST_THROTTLE_LIMIT: "1000"
           EMAIL_VERIFICATION_VERIFY_THROTTLE_LIMIT: "1000"
+          # Route đăng nhập email OTP riêng (/auth/login/email/request|verify) có hạn mức throttle
+          # RIÊNG với đăng ký ở trên (xem auth.controller.ts) - phải relax tương tự, cùng lý do.
+          EMAIL_LOGIN_REQUEST_THROTTLE_LIMIT: "1000"
+          EMAIL_LOGIN_VERIFY_THROTTLE_LIMIT: "1000"
           THROTTLE_TTL: "60"
           THROTTLE_LIMIT: "5000"
         run: |
