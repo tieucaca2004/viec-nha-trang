@@ -57,19 +57,32 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // Cùng lớp lỗi đã sửa ở PostJobWizardScreen/JobSeekerProfileFormScreen: trước đây categories
+  // và areas được await TUẦN TỰ trong 1 try/catch, nên chỉ cần areas() lỗi là categories đã tải
+  // được cũng bị vứt đi - bộ lọc trang chủ mất luôn cả 2 dropdown dù 1 trong 2 API vẫn hoạt động
+  // bình thường. Chạy song song, giữ lại phần nào tải được.
   Future<void> _loadFilterOptions() async {
     final jobsService = context.read<JobsService>();
-    try {
-      final categories = await jobsService.categories();
-      final areas = await jobsService.areas();
-      if (!mounted) return;
-      setState(() {
-        _categories = categories;
-        _areas = areas;
-      });
-    } catch (_) {
+    final results = await Future.wait<Object?>([
+      _safeCall(jobsService.categories()),
+      _safeCall(jobsService.areas()),
+    ]);
+    if (!mounted) return;
+    final categoriesResult = results[0];
+    final areasResult = results[1];
+    setState(() {
       // Bộ lọc không tải được không nên chặn trang chủ hiển thị job - bỏ qua lặng lẽ,
       // filter sheet sẽ chỉ thiếu tuỳ chọn cho tới lần thử lại kế tiếp.
+      if (categoriesResult is List<JobCategory>) _categories = categoriesResult;
+      if (areasResult is List<Area>) _areas = areasResult;
+    });
+  }
+
+  Future<Object?> _safeCall(Future<Object?> future) async {
+    try {
+      return await future;
+    } on ApiException catch (e) {
+      return e;
     }
   }
 

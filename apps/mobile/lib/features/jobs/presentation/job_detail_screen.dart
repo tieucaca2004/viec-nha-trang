@@ -96,7 +96,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
     final profileService = context.read<JobSeekerProfileService>();
     final applicationsService = context.read<ApplicationsService>();
-    final profile = await profileService.getJobSeekerProfile();
+    // Bug thật: getJobSeekerProfile() không được bọc try/catch nên lỗi 500/mất mạng ở đây khiến
+    // nút ỨNG TUYỂN im lặng không phản hồi gì - không loading, không thông báo lỗi, không crash
+    // rõ ràng, chỉ đơn giản là "bấm không có gì xảy ra". Bọc + báo lỗi đúng như phần applyJob bên
+    // dưới trong cùng file này.
+    Map<String, dynamic>? profile;
+    try {
+      profile = await profileService.getJobSeekerProfile();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+      return;
+    }
     if (!profileService.isCompleteEnoughToApply(profile)) {
       if (!mounted) return;
       await _promptCompleteProfile();
