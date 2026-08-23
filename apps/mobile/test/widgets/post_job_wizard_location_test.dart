@@ -9,6 +9,7 @@ import 'package:viec_nha_trang/core/network/api_client.dart';
 import 'package:viec_nha_trang/features/auth/data/auth_service.dart';
 import 'package:viec_nha_trang/features/employer/data/employer_jobs_service.dart';
 import 'package:viec_nha_trang/features/employer/data/employer_profile_service.dart';
+import 'package:viec_nha_trang/features/employer/data/geocoding_service.dart';
 import 'package:viec_nha_trang/features/employer/presentation/employer_business_setup_screen.dart';
 import 'package:viec_nha_trang/features/employer/presentation/post_job_wizard_screen.dart';
 import 'package:viec_nha_trang/features/jobs/data/jobs_service.dart';
@@ -49,8 +50,34 @@ void main() {
         Provider<EmployerProfileService>(create: (_) => EmployerProfileService(api)),
         Provider<EmployerJobsService>(create: (_) => EmployerJobsService(api)),
         Provider<AuthService>(create: (_) => AuthService(api, session)),
+        Provider<GeocodingService>.value(
+          value: GeocodingService(
+            // http.Response mặc định encode Latin1 nếu không khai rõ charset - chuỗi tiếng Việt
+            // ("Vĩnh Hải") làm constructor ném ArgumentError, MockClient bắt được rồi trả ra như
+            // lỗi mạng, khiến geocode luôn "fail" âm thầm. PHẢI set content-type charset=utf-8.
+            client: MockClient((request) async => http.Response(
+                  '[{"display_name":"12 Trần Phú, Vĩnh Hải, Nha Trang","lat":"12.25","lon":"109.19","address":{"suburb":"Vĩnh Hải"}}]',
+                  200,
+                  headers: {'content-type': 'application/json; charset=utf-8'},
+                )),
+          ),
+        ),
       ],
       child: MaterialApp(home: child),
+    );
+  }
+
+  // find.byType(ListView) đơn thuần khớp NHIỀU ListView vì route wizard bên dưới vẫn còn trong
+  // tree (chỉ offstage) - scope vào đúng ListView bên trong EmployerBusinessSetupScreen. Cuộn tới
+  // "TÌM ĐỊA ĐIỂM" (đã tồn tại sẵn, chỉ ngoài viewport) - Card kết quả (ListTile) hiện ngay bên
+  // dưới, vẫn còn trong viewport+cacheExtent nên không cần cuộn thêm để tap nó.
+  Finder employerListView() => find.descendant(of: find.byType(EmployerBusinessSetupScreen), matching: find.byType(ListView));
+
+  Future<void> scrollToSearchButton(WidgetTester tester) async {
+    await tester.dragUntilVisible(
+      find.text('TÌM ĐỊA ĐIỂM'),
+      employerListView(),
+      const Offset(0, -200),
     );
   }
 
@@ -194,19 +221,16 @@ void main() {
     expect(find.byType(EmployerBusinessSetupScreen), findsOneWidget);
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
-    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.dragUntilVisible(
-      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
-      find.byType(ListView),
-      const Offset(0, -200),
-    );
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), '12 Trần Phú');
+    await scrollToSearchButton(tester);
+    await tester.tap(find.text('TÌM ĐỊA ĐIỂM'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
-    await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');
+    // Nominatim mock trả suburb "Vĩnh Hải" - tự map đúng Area duy nhất trong areasJson, không cần
+    // tự bấm chip nữa.
+    await tester.tap(find.byType(ListTile).first);
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('LƯU HỒ SƠ'));
+    await tester.dragUntilVisible(find.text('LƯU HỒ SƠ'), employerListView(), const Offset(0, -200));
     await tester.pumpAndSettle();
     await tester.tap(find.text('LƯU HỒ SƠ'));
     await tester.pumpAndSettle();
@@ -276,19 +300,16 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
-    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.dragUntilVisible(
-      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
-      find.byType(ListView),
-      const Offset(0, -200),
-    );
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), '12 Trần Phú');
+    await scrollToSearchButton(tester);
+    await tester.tap(find.text('TÌM ĐỊA ĐIỂM'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
-    await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');
+    // Nominatim mock trả suburb "Vĩnh Hải" - tự map đúng Area duy nhất trong areasJson, không cần
+    // tự bấm chip nữa.
+    await tester.tap(find.byType(ListTile).first);
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('LƯU HỒ SƠ'));
+    await tester.dragUntilVisible(find.text('LƯU HỒ SƠ'), employerListView(), const Offset(0, -200));
     await tester.pumpAndSettle();
     await tester.tap(find.text('LƯU HỒ SƠ'));
     await tester.pumpAndSettle();
@@ -345,19 +366,16 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
-    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.dragUntilVisible(
-      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
-      find.byType(ListView),
-      const Offset(0, -200),
-    );
-    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), '12 Trần Phú');
+    await scrollToSearchButton(tester);
+    await tester.tap(find.text('TÌM ĐỊA ĐIỂM'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
-    await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');
+    // Nominatim mock trả suburb "Vĩnh Hải" - tự map đúng Area duy nhất trong areasJson, không cần
+    // tự bấm chip nữa.
+    await tester.tap(find.byType(ListTile).first);
     await tester.pumpAndSettle();
 
-    await tester.ensureVisible(find.text('LƯU HỒ SƠ'));
+    await tester.dragUntilVisible(find.text('LƯU HỒ SƠ'), employerListView(), const Offset(0, -200));
     await tester.pumpAndSettle();
     // Bấm liên tiếp nhiều lần trong lúc request tạo cơ sở đầu tiên vẫn đang treo (createGate chưa
     // mở) - đúng kịch bản double-submit thật. Bấm theo TYPE (không theo text 'LƯU HỒ SƠ') vì ngay

@@ -9,6 +9,7 @@ import 'features/auth/data/auth_service.dart';
 import 'features/auth/presentation/onboarding_screen.dart';
 import 'features/employer/data/employer_jobs_service.dart';
 import 'features/employer/data/employer_profile_service.dart';
+import 'features/employer/data/geocoding_service.dart';
 import 'features/jobs/data/jobs_service.dart';
 import 'features/notifications/data/notifications_service.dart';
 import 'features/profile/data/job_seeker_profile_service.dart';
@@ -61,6 +62,7 @@ class VietNhaTrangApp extends StatelessWidget {
         ProxyProvider<ApiClient, SavedJobsService>(update: (_, api, __) => SavedJobsService(api)),
         ProxyProvider<ApiClient, JobSeekerProfileService>(update: (_, api, __) => JobSeekerProfileService(api)),
         ProxyProvider<ApiClient, EmployerProfileService>(update: (_, api, __) => EmployerProfileService(api)),
+        Provider<GeocodingService>(create: (_) => GeocodingService()),
         ProxyProvider<ApiClient, NotificationsService>(update: (_, api, __) => NotificationsService(api)),
         ProxyProvider<ApiClient, EmployerJobsService>(update: (_, api, __) => EmployerJobsService(api)),
         ProxyProvider<NotificationsService, PushService>(update: (_, svc, __) => PushService(svc)),
