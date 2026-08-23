@@ -95,4 +95,82 @@ void main() {
       expect(copy.salaryMax, 60000);
     });
   });
+
+  // Regression cho lỗi "Chưa có dữ liệu khu vực." dù backend đã có Area (JobsService là
+  // session-lifetime singleton qua ProxyProvider - trước đây _areasCache dùng containsKey() nên
+  // 1 lần trả [] bị cache VĨNH VIỄN suốt phiên app, không màn hình/nút THỬ LẠI nào recover được).
+  group('JobsService.areas() cache (fix "Chưa có dữ liệu khu vực" dù backend có data)', () {
+    ApiClient apiReturning(List<dynamic> Function() responses) {
+      final session = Session(storage: InMemoryTokenStorage());
+      return ApiClient(
+        session,
+        httpClient: MockClient((request) async => jsonResponse(responses(), 200)),
+      );
+    }
+
+    // TEST A: API areas trả về 15 khu vực -> lần gọi trả đúng 15 khu vực.
+    test('TEST A: trả đủ danh sách khi API có data', () async {
+      final areas = List.generate(15, (i) => {'id': 'area-$i', 'name': 'Khu vực $i'});
+      final api = apiReturning(() => areas);
+      final result = await JobsService(api).areas();
+      expect(result, hasLength(15));
+    });
+
+    // TEST B: API areas trả về [] -> service trả về [] (UI tự quyết định hiển thị "Chưa có dữ
+    // liệu khu vực." dựa trên list rỗng này - không phải lỗi service).
+    test('TEST B: trả về rỗng khi API trả về rỗng', () async {
+      final api = apiReturning(() => []);
+      final result = await JobsService(api).areas();
+      expect(result, isEmpty);
+    });
+
+    // TEST D (bug chính đã fix): API trả [] ở lần gọi đầu (vd timing race lúc khởi động), sau đó
+    // backend có data thật -> lần gọi tiếp theo (không cần forceRefresh) PHẢI trả về data mới,
+    // KHÔNG được kẹt ở cache rỗng vĩnh viễn.
+    test('TEST D: KHÔNG cache kết quả rỗng - lần gọi sau tự động lấy được data khi backend đã có', () async {
+      var callCount = 0;
+      final session = Session(storage: InMemoryTokenStorage());
+      final api = ApiClient(
+        session,
+        httpClient: MockClient((request) async {
+          callCount++;
+          if (callCount == 1) return jsonResponse([], 200);
+          return jsonResponse([
+            {'id': 'area-1', 'name': 'Vĩnh Hải'},
+          ], 200);
+        }),
+      );
+      final service = JobsService(api);
+
+      final first = await service.areas();
+      expect(first, isEmpty);
+
+      // Gọi lại KHÔNG truyền forceRefresh (đúng như 3 call site thật trong app) - phải gọi lại
+      // API vì lần trước rỗng không được cache, chứ không được trả cache rỗng cũ.
+      final second = await service.areas();
+      expect(second, hasLength(1));
+      expect(second.first.name, 'Vĩnh Hải');
+      expect(callCount, 2);
+    });
+
+    // Đối chứng: kết quả KHÔNG rỗng thì VẪN được cache như cũ (không gọi lại API lần 2) - đảm bảo
+    // fix không làm mất tối ưu cache hợp lệ đặc tả hotfix §5.
+    test('data hợp lệ vẫn được cache bình thường (không gọi lại API khi đã có data)', () async {
+      var callCount = 0;
+      final session = Session(storage: InMemoryTokenStorage());
+      final api = ApiClient(
+        session,
+        httpClient: MockClient((request) async {
+          callCount++;
+          return jsonResponse([
+            {'id': 'area-1', 'name': 'Vĩnh Hải'},
+          ], 200);
+        }),
+      );
+      final service = JobsService(api);
+      await service.areas();
+      await service.areas();
+      expect(callCount, 1);
+    });
+  });
 }

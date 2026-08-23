@@ -471,6 +471,59 @@ void main() {
     expect(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'), findsOneWidget);
   });
 
+  // TEST D (đặc tả DEBUG ROOT CAUSE LỖI KHU VỰC): /areas trả về [] ở lần tải đầu (KHÔNG phải lỗi
+  // HTTP - đúng bug thật đã báo cáo: backend/DB đã có Area nhưng app vẫn báo "Chưa có dữ liệu khu
+  // vực.") - bấm THỬ LẠI phải gọi lại API và nhận được data thật, KHÔNG được kẹt ở cache rỗng.
+  testWidgets('TEST D: /areas trả rỗng lần đầu, bấm THỬ LẠI nhận được data thật (không kẹt cache rỗng)', (tester) async {
+    var areasCallCount = 0;
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(
+      session,
+      httpClient: MockClient((request) async {
+        if (request.url.path.endsWith('/areas')) {
+          areasCallCount++;
+          if (areasCallCount == 1) return jsonResponse([], 200);
+          return jsonResponse([
+            {'id': 'area-1', 'name': 'Vĩnh Hải'},
+          ], 200);
+        }
+        if (request.url.path.endsWith('/cities')) return jsonResponse([], 200);
+        if (request.url.path.endsWith('/me/employer-profile') && request.method == 'GET') {
+          return http.Response('not found', 404);
+        }
+        if (request.url.path.endsWith('/me/employer-profile/locations') && request.method == 'GET') {
+          return jsonResponse([], 200);
+        }
+        if (request.url.path.endsWith('/me')) {
+          return jsonResponse({'id': 'u1', 'phone': null, 'isPhoneVerified': false}, 200);
+        }
+        return http.Response('unexpected: ${request.url.path}', 404);
+      }),
+    );
+
+    await tester.pumpWidget(buildScreen(api));
+    await tester.pumpAndSettle();
+
+    await tester.dragUntilVisible(
+      find.text('THỬ LẠI'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    expect(find.textContaining('Chưa có dữ liệu khu vực'), findsOneWidget);
+
+    await tester.tap(find.text('THỬ LẠI'));
+    await tester.pumpAndSettle();
+
+    expect(areasCallCount, 2, reason: 'THỬ LẠI phải gọi lại API, không dùng cache rỗng cũ');
+    await tester.dragUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    expect(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'), findsOneWidget);
+    expect(find.textContaining('Chưa có dữ liệu khu vực'), findsNothing);
+  });
+
   testWidgets('GPS permission denied does not crash and suggests manual address search', (tester) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       _geolocatorChannel,
