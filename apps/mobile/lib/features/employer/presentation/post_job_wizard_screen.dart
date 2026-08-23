@@ -6,6 +6,7 @@ import '../../jobs/data/jobs_service.dart';
 import '../data/employer_jobs_service.dart';
 import '../data/employer_profile_service.dart';
 import '../../../shared/widgets/phone_verification_sheet.dart';
+import 'employer_business_setup_screen.dart';
 
 /// Wizard đăng tin cực ngắn - mỗi bước 1 câu hỏi, mục tiêu đăng tin trong 1-2 phút
 /// (đặc tả §19 Phase 3). Lương là trường bắt buộc: không cho qua bước nếu thiếu, khớp
@@ -39,6 +40,7 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   final _descriptionController = TextEditingController();
   bool _submitting = false;
   bool _loadingOptions = true;
+  bool _loadingLocations = false;
   String? _error;
 
   static const totalSteps = 8;
@@ -90,6 +92,44 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
     } on ApiException catch (e) {
       return e;
     }
+  }
+
+  // Bug thật trên Beta: nhà tuyển dụng MỚI (chưa có cơ sở nào) bị DEAD-END ở bước 5/8 - màn hình
+  // chỉ nói "Bạn chưa có cơ sở nào" mà không có cách nào để tạo cơ sở, TIẾP TỤC mãi mãi bị mờ.
+  // EmployerBusinessSetupScreen đã có sẵn (dùng đúng CreateEmployerLocationDto/addEmployerLocation
+  // hiện có, kể cả tự tạo employer profile trước nếu cần) - chỉ cần mở nó từ đây và nạp lại danh
+  // sách cơ sở khi quay về, KHÔNG reset _step/dữ liệu các bước 1-4 (push, không phải
+  // pushReplacement; chỉ _locations/_locationId được cập nhật).
+  Future<void> _createLocation() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const EmployerBusinessSetupScreen()),
+    );
+    if (created == true) await _reloadLocations();
+  }
+
+  Future<void> _reloadLocations() async {
+    setState(() {
+      _loadingLocations = true;
+      _error = null;
+    });
+    final employerProfileService = context.read<EmployerProfileService>();
+    final result = await _safeCall(employerProfileService.myEmployerLocations());
+    if (!mounted) return;
+    setState(() {
+      if (result is List) {
+        _locations = result;
+        // Cơ sở vừa tạo là cơ sở DUY NHẤT ngay sau khi từ trạng thái rỗng - tự động chọn luôn,
+        // đúng yêu cầu "location vừa tạo tự động chọn nếu phù hợp với architecture hiện tại".
+        if (result.isNotEmpty && (_locationId == null || !result.any((l) => l['id'] == _locationId))) {
+          _locationId = result.first['id'];
+        }
+      } else if (result is ApiException) {
+        // Tạo cơ sở đã thành công (EmployerBusinessSetupScreen đã pop(true)) - chỉ riêng bước nạp
+        // lại danh sách bị lỗi. Báo rõ và cho thử lại, KHÔNG được coi như tạo cơ sở thất bại.
+        _error = 'Đã tạo cơ sở nhưng chưa tải lại được danh sách. ${result.userMessage}';
+      }
+      _loadingLocations = false;
+    });
   }
 
   bool _canGoNext() {
@@ -364,7 +404,26 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   Widget _stepLocation() => _stepWrapper(
         'Địa điểm',
         _locations.isEmpty
-            ? const Text('Bạn chưa có cơ sở nào. Hãy tạo hồ sơ cơ sở trước khi đăng tin.')
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Bạn chưa có cơ sở nào.'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Thêm địa chỉ cơ sở để sử dụng cho tin tuyển dụng.',
+                    style: TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_loadingLocations)
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    FilledButton.icon(
+                      onPressed: _createLocation,
+                      icon: const Icon(Icons.add_business),
+                      label: const Text('+ TẠO CƠ SỞ'),
+                    ),
+                ],
+              )
             : Wrap(
                 spacing: 8,
                 runSpacing: 8,

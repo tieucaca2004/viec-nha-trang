@@ -183,6 +183,11 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
   }
 
   Future<void> _save() async {
+    // Bug thật: nút LƯU HỒ SƠ chỉ bị khoá qua `onPressed: _saving ? null : _save` - nếu 2 lần
+    // bấm xảy ra trước khi widget kịp rebuild (vd double-tap thật hoặc test bấm liên tiếp không
+    // đợi frame), cả 2 đều gọi trực tiếp _save() và tạo 2 cơ sở trùng lặp. Chặn thêm ngay tại
+    // đây, không chỉ dựa vào trạng thái disabled của nút.
+    if (_saving) return;
     if (_businessNameController.text.trim().isEmpty || _areaId == null) {
       setState(() => _error = 'Vui lòng nhập tên doanh nghiệp và chọn khu vực.');
       return;
