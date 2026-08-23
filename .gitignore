@@ -3,9 +3,11 @@ node_modules/
 
 # Backend (NestJS)
 apps/backend/dist/
+apps/backend/dist-seed/
 apps/backend/coverage/
 apps/backend/tsconfig.tsbuildinfo
 apps/backend/tsconfig.build.tsbuildinfo
+apps/backend/tsconfig.seed.tsbuildinfo
 apps/backend/.env
 apps/backend/.env.*
 !apps/backend/.env.example

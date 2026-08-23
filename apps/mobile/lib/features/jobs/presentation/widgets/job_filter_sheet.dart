@@ -69,9 +69,21 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                   controller: scrollController,
                   children: [
                     _sectionTitle('Khoảng cách'),
+                    // Bổ sung 20/30 km (Phase F §5/§10) - cùng field _radiusKm/API radiusKm hiện
+                    // có, chỉ thêm lựa chọn lớn hơn, không đổi hành vi. "Toàn Khánh Hòa" CHƯA
+                    // thêm ở đây: cần dataset khu vực toàn tỉnh đã xác minh nguồn trước (đang chờ
+                    // duyệt), không giả lập bằng radius cực lớn theo đúng yêu cầu.
+                    if (_radiusKm != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          'Trong bán kính ${_radiusKm!.toInt()} km tính theo khoảng cách thực tế, không theo ranh giới hành chính.',
+                          style: const TextStyle(color: Colors.black54, fontSize: 12),
+                        ),
+                      ),
                     Wrap(
                       spacing: 8,
-                      children: [1.0, 3.0, 5.0, 10.0]
+                      children: [1.0, 3.0, 5.0, 10.0, 20.0, 30.0]
                           .map((km) => ChoiceChip(
                                 label: Text('${km.toInt()} km'),
                                 selected: _radiusKm == km,

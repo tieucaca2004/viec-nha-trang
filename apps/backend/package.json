@@ -16,6 +16,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
     "seed:synthetic": "ts-node prisma/seed-synthetic.ts",
+    "build:seed": "tsc -p tsconfig.seed.json",
+    "seed:prod": "node dist-seed/seed.js",
     "pretest:e2e": "dotenv -e .env.test -- prisma migrate deploy"
   },
   "prisma": {
