@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/models/job.dart';
@@ -49,6 +50,17 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   void initState() {
     super.initState();
     _loadOptions();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _salaryMinController.dispose();
+    _salaryMaxController.dispose();
+    _shiftStartController.dispose();
+    _shiftEndController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   // Bug thật trên Beta (bước 1 trắng trơn, TIẾP TỤC bị mờ): trước đây categories và locations được
@@ -132,12 +144,28 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
     });
   }
 
+  // Ô lương chỉ nhận chữ số (xem inputFormatters ở _stepSalary) nên int.parse luôn thành công với
+  // chuỗi không rỗng - trả null nghĩa là người dùng chưa nhập, KHÔNG phải "lương bằng 0".
+  int? _parseSalary(String raw) => int.tryParse(raw.trim());
+
+  // Lương tối thiểu lớn hơn lương tối đa là dữ liệu sai: backend chỉ validate từng trường riêng
+  // (@IsInt @Min(0) trên salaryMin/salaryMax, không có kiểm tra chéo), nên tin vẫn được tạo với
+  // khoảng lương đảo ngược - hiển thị sai trên thẻ việc làm và làm lệch cả bộ lọc lương
+  // (salaryMax >= filter.salaryMin / salaryMin <= filter.salaryMax) lẫn sort theo lương.
+  bool get _salaryRangeInvalid {
+    final min = _parseSalary(_salaryMinController.text);
+    final max = _parseSalary(_salaryMaxController.text);
+    return min != null && max != null && min > max;
+  }
+
   bool _canGoNext() {
     switch (_step) {
       case 0:
         return _categoryId != null;
       case 2:
-        return _salaryMinController.text.isNotEmpty && _salaryMaxController.text.isNotEmpty;
+        final min = _parseSalary(_salaryMinController.text);
+        final max = _parseSalary(_salaryMaxController.text);
+        return min != null && max != null && min <= max;
       case 3:
         return _shifts.isNotEmpty;
       case 4:
@@ -175,8 +203,8 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
       'shifts': _shifts.toList(),
       'shiftStartTime': _shiftStartController.text.trim().isEmpty ? null : _shiftStartController.text.trim(),
       'shiftEndTime': _shiftEndController.text.trim().isEmpty ? null : _shiftEndController.text.trim(),
-      'salaryMin': int.tryParse(_salaryMinController.text) ?? 0,
-      'salaryMax': int.tryParse(_salaryMaxController.text) ?? 0,
+      'salaryMin': _parseSalary(_salaryMinController.text) ?? 0,
+      'salaryMax': _parseSalary(_salaryMaxController.text) ?? 0,
       'salaryUnit': _salaryUnit,
       'startUrgency': _startUrgency,
       'requiredExperience': _requiredExperience,
@@ -185,6 +213,10 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   }
 
   Future<void> _submit() async {
+    // onPressed được tính tại thời điểm build, nên 2 lần chạm trong CÙNG 1 frame đều gọi lại
+    // closure cũ (_submitting vẫn còn false) - không có chốt này thì bấm nhanh 2 lần sẽ tạo 2 tin
+    // tuyển dụng trùng nhau. Cùng chốt như _save()/_searchAddress() ở EmployerBusinessSetupScreen.
+    if (_submitting) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -335,6 +367,12 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
                   child: TextField(
                     controller: _salaryMinController,
                     keyboardType: TextInputType.number,
+                    // Người dùng VN gõ/dán "5.000.000" là bình thường. Trước đây int.tryParse() trả
+                    // null cho chuỗi có dấu phân cách rồi rơi vào `?? 0`, nên tin được đăng với mức
+                    // lương 0 mà không có bất kỳ cảnh báo nào. Lọc còn chữ số ngay khi nhập: dấu
+                    // chấm/phẩy bị bỏ đi thành đúng con số người dùng định nhập, và cũng chặn luôn
+                    // dấu trừ (backend yêu cầu @Min(0)).
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(labelText: 'Từ', border: OutlineInputBorder()),
                   ),
@@ -344,12 +382,22 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
                   child: TextField(
                     controller: _salaryMaxController,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(labelText: 'Đến', border: OutlineInputBorder()),
                   ),
                 ),
               ],
             ),
+            // Nút TIẾP TỤC bị khoá khi khoảng lương đảo ngược - phải nói rõ lý do, nếu không người
+            // dùng lại gặp đúng kiểu bế tắc "nút mờ mà không biết vì sao" như bug bước 5/8 trước đây.
+            if (_salaryRangeInvalid) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Lương tối thiểu đang lớn hơn lương tối đa.',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
