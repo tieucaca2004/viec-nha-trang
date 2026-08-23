@@ -315,6 +315,110 @@ void main() {
     expect(find.widgetWithText(TextField, 'Kinh độ (longitude)'), findsNothing);
   });
 
+  // Đặc tả TINH CHỈNH GEOCODING mục 2: lỗi geocoding (bất kể loại) KHÔNG được xoá dữ liệu form đã
+  // nhập (tên/địa chỉ/SĐT) hay Area đã chọn trước đó từ 1 lần search thành công trước.
+  testWidgets('geocoding search error preserves form data and a previously auto-matched area', (tester) async {
+    var geoCallCount = 0;
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(session, httpClient: areaBackendClient());
+    final geoClient = MockClient((request) async {
+      geoCallCount++;
+      if (geoCallCount == 1) {
+        return nominatimSearchResponse(
+          displayName: 'Vĩnh Hải, Nha Trang',
+          lat: 12.26,
+          lon: 109.2,
+          address: {'suburb': 'Vĩnh Hải'},
+        );
+      }
+      return http.Response('server error', 500);
+    });
+
+    await tester.pumpWidget(buildScreen(api, geoClient: geoClient));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
+    await tester.enterText(find.widgetWithText(TextField, 'Số điện thoại cơ sở (không bắt buộc)'), '0900000009');
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), 'Vĩnh Hải');
+
+    // Lần search đầu: thành công, tự map Area.
+    await scrollToSearchButton(tester);
+    await tester.tap(find.text('TÌM ĐỊA ĐIỂM'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(ListTile).first);
+    await tester.pumpAndSettle();
+    await tester.dragUntilVisible(
+      find.textContaining('Khu vực đã được tự động xác định'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    expect(find.textContaining('Khu vực đã được tự động xác định'), findsOneWidget);
+
+    // Lần search thứ 2 (vd người dùng đổi ý gõ địa chỉ khác rồi tìm lại): server lỗi 500.
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), 'địa chỉ khác');
+    await scrollToSearchButton(tester);
+    await tester.tap(find.text('TÌM ĐỊA ĐIỂM'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Dịch vụ tìm địa điểm đang gặp lỗi'), findsOneWidget);
+    // Area đã tự map từ lần search trước KHÔNG bị xoá chỉ vì lần search sau đó lỗi.
+    expect(find.textContaining('Khu vực đã được tự động xác định'), findsOneWidget);
+
+    // Dữ liệu form (tên/SĐT) vẫn còn nguyên - cuộn lại đầu để field được build lại rồi kiểm tra.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 800));
+    await tester.pumpAndSettle();
+    expect(find.text('Quán Test'), findsOneWidget);
+    expect(find.text('0900000009'), findsOneWidget);
+  });
+
+  // Đặc tả TINH CHỈNH GEOCODING mục "double tap": bấm liên tiếp nút TÌM ĐỊA ĐIỂM trong lúc request
+  // đầu CHƯA xong chỉ được gửi ĐÚNG 1 request tìm kiếm.
+  testWidgets('double-tapping TÌM ĐỊA ĐIỂM only sends 1 search request', (tester) async {
+    var searchCallCount = 0;
+    final searchGate = Completer<void>();
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(session, httpClient: areaBackendClient());
+    final geoClient = MockClient((request) async {
+      searchCallCount++;
+      await searchGate.future;
+      return nominatimSearchResponse(displayName: 'Vĩnh Hải, Nha Trang', lat: 12.26, lon: 109.2, address: {'suburb': 'Vĩnh Hải'});
+    });
+
+    await tester.pumpWidget(buildScreen(api, geoClient: geoClient));
+    await tester.pumpAndSettle();
+
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ (vd: 37 Hồng Bàng, Nha Trang)'), 'Vĩnh Hải');
+    await scrollToSearchButton(tester);
+
+    // Bấm liên tiếp trong lúc request đầu (bị chặn bởi searchGate) vẫn còn treo - nút TÌM ĐỊA
+    // ĐIỂM phải tự khoá (_searching=true) ngay từ lần bấm đầu, không đợi rebuild. Tap theo TYPE
+    // (OutlinedButton đầu tiên trong Row = nút TÌM ĐỊA ĐIỂM, đứng trước nút GPS trong widget tree)
+    // vì sau lần bấm đầu, text 'TÌM ĐỊA ĐIỂM' biến mất (thay bằng spinner).
+    final searchButtonFinder = find.byWidgetPredicate((w) => w is OutlinedButton).first;
+    await tester.tap(searchButtonFinder);
+    await tester.pump();
+    await tester.tap(searchButtonFinder, warnIfMissed: false);
+    await tester.pump();
+    await tester.tap(searchButtonFinder, warnIfMissed: false);
+    await tester.pump();
+
+    expect(searchCallCount, 1, reason: 'nút phải khoá NGAY khi request đầu còn đang treo');
+    searchGate.complete();
+    await tester.pumpAndSettle();
+    expect(searchCallCount, 1);
+  });
+
   // Root cause thật của bug (xem docstring đầu file): /areas thất bại phải hiện thông báo RIÊNG
   // + nút THỬ LẠI, không được gộp chung với "search không khớp".
   testWidgets('shows a distinct retry message when /areas itself fails to load (not "no search match")', (tester) async {

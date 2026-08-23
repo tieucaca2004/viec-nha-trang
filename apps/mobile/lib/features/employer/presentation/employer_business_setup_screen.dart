@@ -191,6 +191,9 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
   }
 
   Future<void> _searchAddress() async {
+    // Cùng bug class với _save() (xem comment ở đó): chỉ dựa vào `onPressed: _searching ? null :
+    // _searchAddress` không đủ khoá double-tap nếu 2 lần bấm xảy ra trước khi widget kịp rebuild.
+    if (_searching) return;
     final query = _addressController.text.trim();
     if (query.isEmpty) return;
     setState(() {
@@ -200,13 +203,14 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
     });
     try {
       final geocodingService = context.read<GeocodingService>();
-      final results = await geocodingService.search(query);
+      // searchAddress() ném GeocodingException(kind: noResult) khi không có kết quả - không cần
+      // tự kiểm tra results.isEmpty ở đây nữa, catch bên dưới xử lý thống nhất mọi loại lỗi.
+      final results = await geocodingService.searchAddress(query);
       if (!mounted) return;
-      setState(() {
-        _searchResults = results;
-        if (results.isEmpty) _geocodingError = 'Không tìm thấy địa điểm phù hợp. Bạn có thể chọn khu vực thủ công bên dưới.';
-      });
+      setState(() => _searchResults = results);
     } on GeocodingException catch (e) {
+      // Lỗi search KHÔNG được xoá dữ liệu form đã nhập (tên/địa chỉ/SĐT) hay Area đã chọn trước
+      // đó (đặc tả TINH CHỈNH GEOCODING mục 2) - chỉ set _geocodingError, không đụng gì khác.
       if (!mounted) return;
       setState(() => _geocodingError = e.userMessage);
     } finally {
@@ -252,14 +256,12 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
       });
       try {
         final geocodingService = context.read<GeocodingService>();
-        final result = await geocodingService.reverse(position.latitude, position.longitude);
+        final result = await geocodingService.reverseGeocode(position.latitude, position.longitude);
         if (!mounted) return;
-        if (result != null) {
-          setState(() => _applyGeocodingResult(result));
-        } else {
-          setState(() => _geocodingError = 'Không xác định được địa chỉ tại vị trí này. Vui lòng nhập địa chỉ hoặc chọn khu vực thủ công.');
-        }
+        setState(() => _applyGeocodingResult(result));
       } on GeocodingException catch (e) {
+        // Toạ độ GPS đã lưu ở trên vẫn giữ nguyên - reverse geocode lỗi chỉ mất phần địa chỉ/Area
+        // tự động, không mất toạ độ đã lấy được (đặc tả mục 5 gốc).
         if (!mounted) return;
         setState(() => _geocodingError = 'Lấy được vị trí nhưng ${e.userMessage[0].toLowerCase()}${e.userMessage.substring(1)} Vui lòng nhập địa chỉ hoặc chọn khu vực thủ công.');
       }

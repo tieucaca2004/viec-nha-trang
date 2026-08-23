@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../../shared/models/job.dart';
@@ -37,9 +38,33 @@ Area? matchAreaFromAddress(Map<String, dynamic> addressComponents, List<Area> ar
 /// KHÔNG cần API key/billing (đặc tả FIX LỖI "VUI LÒNG NHẬP TÊN..." mục 2/3/5: dự án chưa có
 /// Google Maps/Places API key nào, người dùng đã chọn dùng Nominatim thay vì trả tiền Google).
 /// Independent với ApiClient (không cần auth, không phải backend của chính ứng dụng).
+
+/// Phân loại lỗi geocoding (đặc tả TINH CHỈNH GEOCODING mục 1) - để caller hiển thị đúng thông
+/// báo theo bản chất lỗi thay vì 1 câu chung chung cho mọi trường hợp.
+enum GeocodingErrorKind {
+  /// Request vượt quá thời gian chờ ([GeocodingService._timeout]).
+  timeout,
+
+  /// Lỗi kết nối mạng (không có Internet, DNS lỗi, ...) - không phải timeout, không có response.
+  network,
+
+  /// Server trả về HTTP status khác 200.
+  httpError,
+
+  /// Request thành công nhưng không có địa điểm/địa chỉ phù hợp.
+  noResult,
+}
+
 class GeocodingException implements Exception {
+  final GeocodingErrorKind kind;
   final String userMessage;
-  GeocodingException(this.userMessage);
+  // Chi tiết kỹ thuật (exception gốc/HTTP status) - CHỈ để debug/log, không hiển thị cho người
+  // dùng (userMessage mới là thông báo hiển thị UI).
+  final String? debugDetail;
+  GeocodingException(this.kind, this.userMessage, {this.debugDetail});
+
+  @override
+  String toString() => 'GeocodingException(kind: $kind, userMessage: $userMessage, debugDetail: $debugDetail)';
 }
 
 class GeocodingResult {
@@ -68,8 +93,34 @@ class GeocodingService {
   GeocodingService({http.Client? client}) : _client = client ?? http.Client();
 
   static const _userAgent = 'ViecNhaTrangApp/1.0 (contact: support@viecnhatrang.vn)';
+  static const _timeout = Duration(seconds: 10);
 
-  Future<List<GeocodingResult>> search(String query) async {
+  Future<http.Response> _get(Uri uri) async {
+    try {
+      return await _client.get(uri, headers: {'User-Agent': _userAgent}).timeout(_timeout);
+    } on TimeoutException catch (e) {
+      throw GeocodingException(GeocodingErrorKind.timeout, 'Hết thời gian chờ. Vui lòng thử lại.', debugDetail: e.toString());
+    } catch (e) {
+      throw GeocodingException(GeocodingErrorKind.network, 'Không thể kết nối mạng. Vui lòng kiểm tra kết nối.', debugDetail: e.toString());
+    }
+  }
+
+  void _checkStatus(http.Response response) {
+    if (response.statusCode != 200) {
+      throw GeocodingException(
+        GeocodingErrorKind.httpError,
+        'Dịch vụ tìm địa điểm đang gặp lỗi. Vui lòng thử lại.',
+        debugDetail: 'HTTP ${response.statusCode}',
+      );
+    }
+  }
+
+  /// Tìm địa điểm theo địa chỉ người dùng nhập (kích hoạt bằng nút TÌM ĐỊA ĐIỂM, KHÔNG tự search
+  /// khi đang gõ - đặc tả TINH CHỈNH GEOCODING: giữ nguyên UX, không cần debounce vì không có
+  /// request nào phát sinh theo từng ký tự). Ném [GeocodingException] kind=noResult nếu Nominatim
+  /// trả về danh sách rỗng, thay vì trả list rỗng cho caller tự suy luận - thống nhất 1 nơi xử lý
+  /// lỗi (try/catch theo [GeocodingErrorKind]) cho mọi trường hợp thất bại.
+  Future<List<GeocodingResult>> searchAddress(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return [];
     final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
@@ -79,40 +130,33 @@ class GeocodingService {
       'limit': '5',
       'countrycodes': 'vn',
     });
-    http.Response response;
-    try {
-      response = await _client.get(uri, headers: {'User-Agent': _userAgent}).timeout(const Duration(seconds: 10));
-    } catch (_) {
-      throw GeocodingException('Không tìm được địa điểm (lỗi mạng). Vui lòng thử lại.');
-    }
-    if (response.statusCode != 200) {
-      throw GeocodingException('Không tìm được địa điểm. Vui lòng thử lại.');
-    }
+    final response = await _get(uri);
+    _checkStatus(response);
     final list = jsonDecode(response.body) as List;
-    return list.map((e) => GeocodingResult.fromJson(e as Map<String, dynamic>)).toList();
+    final results = list.map((e) => GeocodingResult.fromJson(e as Map<String, dynamic>)).toList();
+    if (results.isEmpty) {
+      throw GeocodingException(GeocodingErrorKind.noResult, 'Không tìm thấy địa điểm phù hợp. Hãy kiểm tra lại địa chỉ.');
+    }
+    return results;
   }
 
-  /// Trả null nếu Nominatim không xác định được địa chỉ cho toạ độ này (không phải lỗi mạng -
-  /// GPS vẫn hợp lệ, chỉ là không có địa chỉ khớp) - phân biệt với [GeocodingException] (lỗi
-  /// mạng/server) để caller xử lý đúng theo mục 5: GPS lỗi mạng vẫn giữ được toạ độ.
-  Future<GeocodingResult?> reverse(double latitude, double longitude) async {
+  /// Xác định địa chỉ từ toạ độ GPS (reverse geocode). Ném [GeocodingException] kind=noResult nếu
+  /// Nominatim không xác định được địa chỉ cho toạ độ này - toạ độ GPS bản thân nó vẫn hợp lệ,
+  /// caller (màn hình) phải tự giữ lại toạ độ đã lấy được kể cả khi bước reverse geocode này lỗi
+  /// (đặc tả mục 5 gốc), không phải trách nhiệm của service này.
+  Future<GeocodingResult> reverseGeocode(double latitude, double longitude) async {
     final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
       'lat': latitude.toString(),
       'lon': longitude.toString(),
       'format': 'jsonv2',
       'addressdetails': '1',
     });
-    http.Response response;
-    try {
-      response = await _client.get(uri, headers: {'User-Agent': _userAgent}).timeout(const Duration(seconds: 10));
-    } catch (_) {
-      throw GeocodingException('Không xác định được địa chỉ từ vị trí GPS (lỗi mạng).');
-    }
-    if (response.statusCode != 200) {
-      throw GeocodingException('Không xác định được địa chỉ từ vị trí GPS.');
-    }
+    final response = await _get(uri);
+    _checkStatus(response);
     final map = jsonDecode(response.body) as Map<String, dynamic>;
-    if (map['error'] != null) return null;
+    if (map['error'] != null) {
+      throw GeocodingException(GeocodingErrorKind.noResult, 'Không tìm thấy địa điểm phù hợp. Hãy kiểm tra lại địa chỉ.');
+    }
     return GeocodingResult.fromJson(map);
   }
 }
