@@ -3,6 +3,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/models/job.dart';
+import '../../../shared/utils/normalize_vi.dart';
 import '../../jobs/data/jobs_service.dart';
 import '../data/employer_profile_service.dart';
 import '../../auth/data/auth_service.dart';
@@ -39,6 +40,16 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
   List<Area> _areas = [];
   String? _areaId;
   String? _cityId;
+  final _areaSearchController = TextEditingController();
+  String _areaSearchQuery = '';
+
+  // Search client-side trên danh sách Area (phường/xã cũ) đã tải sẵn - không phân biệt
+  // dấu/hoa-thường (đặc tả: gõ "Vĩnh Hải" hoặc "vinh hai" đều phải lọc ra đúng Vĩnh Hải).
+  List<Area> get _filteredAreas {
+    if (_areaSearchQuery.trim().isEmpty) return _areas;
+    final normalizedQuery = normalizeVietnamese(_areaSearchQuery);
+    return _areas.where((a) => normalizeVietnamese(a.name).contains(normalizedQuery)).toList();
+  }
   bool _saving = false;
   bool _loadingExisting = true;
   bool _locatingGps = false;
@@ -72,6 +83,7 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
     _phoneController.dispose();
     _latitudeController.dispose();
     _longitudeController.dispose();
+    _areaSearchController.dispose();
     super.dispose();
   }
 
@@ -306,12 +318,43 @@ class _EmployerBusinessSetupScreenState extends State<EmployerBusinessSetupScree
             decoration: const InputDecoration(labelText: 'Số điện thoại cơ sở (không bắt buộc)', border: OutlineInputBorder()),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _areaId,
-            decoration: const InputDecoration(labelText: 'Khu vực', border: OutlineInputBorder()),
-            items: _areas.map((a) => DropdownMenuItem(value: a.id, child: Text(a.name))).toList(),
-            onChanged: _hasExistingLocation ? null : (v) => setState(() => _areaId = v),
-          ),
+          const Text('Khu vực', style: TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          // Thay DropdownButtonFormField bằng ô tìm kiếm + ChoiceChip (đặc tả Phase F: gõ
+          // "Vĩnh Hải"/"Lộc Thọ" phải lọc đúng khu vực đó) - Dropdown không hỗ trợ lọc sẵn, và
+          // lọc items trong khi vẫn giữ value đã chọn ngoài danh sách lọc sẽ gây assertion lỗi.
+          if (_areas.length > 6 && !_hasExistingLocation) ...[
+            TextField(
+              controller: _areaSearchController,
+              decoration: const InputDecoration(
+                hintText: 'Tìm khu vực (vd: Vĩnh Hải, Lộc Thọ)',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (v) => setState(() => _areaSearchQuery = v),
+            ),
+            const SizedBox(height: 8),
+          ],
+          if (_hasExistingLocation)
+            Chip(label: Text(_areas.firstWhere((a) => a.id == _areaId, orElse: () => Area(id: '', name: 'Không xác định')).name))
+          else if (_filteredAreas.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('Không tìm thấy khu vực phù hợp.', style: TextStyle(color: Colors.black54)),
+            )
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _filteredAreas
+                  .map((a) => ChoiceChip(
+                        label: Text(a.name),
+                        selected: _areaId == a.id,
+                        onSelected: (_) => setState(() => _areaId = a.id),
+                      ))
+                  .toList(),
+            ),
           const SizedBox(height: 20),
           const Text('Vị trí cơ sở', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),

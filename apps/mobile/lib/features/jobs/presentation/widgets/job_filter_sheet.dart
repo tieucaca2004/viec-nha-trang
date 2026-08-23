@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../../shared/models/job.dart';
+import '../../../../shared/utils/normalize_vi.dart';
 import '../../data/jobs_service.dart';
 
 /// Bottom sheet lọc việc làm (đặc tả §10 Phase 3): khoảng cách, khu vực, danh mục, lương,
@@ -33,6 +34,8 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
   double? _radiusKm;
   late final TextEditingController _salaryMinController;
   late final TextEditingController _salaryMaxController;
+  final _areaSearchController = TextEditingController();
+  String _areaSearchQuery = '';
 
   @override
   void initState() {
@@ -47,7 +50,16 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
   void dispose() {
     _salaryMinController.dispose();
     _salaryMaxController.dispose();
+    _areaSearchController.dispose();
     super.dispose();
+  }
+
+  // Danh sách Area cũ (Vĩnh Hải, Lộc Thọ, ...) đã tải sẵn từ widget.areas - search client-side,
+  // không phân biệt dấu/hoa-thường, không cần gọi API riêng vì danh sách đã có đủ trong bộ nhớ.
+  List<Area> get _filteredAreas {
+    if (_areaSearchQuery.trim().isEmpty) return widget.areas;
+    final normalizedQuery = normalizeVietnamese(_areaSearchQuery);
+    return widget.areas.where((a) => normalizeVietnamese(a.name).contains(normalizedQuery)).toList();
   }
 
   @override
@@ -92,17 +104,36 @@ class _JobFilterSheetState extends State<JobFilterSheet> {
                           .toList(),
                     ),
                     _sectionTitle('Khu vực'),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: widget.areas
-                          .map((a) => ChoiceChip(
-                                label: Text(a.name),
-                                selected: _filters.areaId == a.id,
-                                onSelected: (_) => setState(() => _filters.areaId = (_filters.areaId == a.id) ? null : a.id),
-                              ))
-                          .toList(),
-                    ),
+                    if (widget.areas.length > 6) ...[
+                      TextField(
+                        controller: _areaSearchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Tìm phường/xã (vd: Vĩnh Hải, Lộc Thọ)',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setState(() => _areaSearchQuery = v),
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                    if (_filteredAreas.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text('Không tìm thấy khu vực phù hợp.', style: TextStyle(color: Colors.black54)),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _filteredAreas
+                            .map((a) => ChoiceChip(
+                                  label: Text(a.name),
+                                  selected: _filters.areaId == a.id,
+                                  onSelected: (_) => setState(() => _filters.areaId = (_filters.areaId == a.id) ? null : a.id),
+                                ))
+                            .toList(),
+                      ),
                     _sectionTitle('Danh mục'),
                     Wrap(
                       spacing: 8,

@@ -195,11 +195,12 @@ void main() {
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
     await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Vĩnh Hải').last);
+    await tester.dragUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
     await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');
@@ -276,11 +277,12 @@ void main() {
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
     await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Vĩnh Hải').last);
+    await tester.dragUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
     await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');
@@ -344,11 +346,12 @@ void main() {
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
     await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    await tester.ensureVisible(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Vĩnh Hải').last);
+    await tester.dragUntilVisible(
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
     await tester.pumpAndSettle();
     await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.25');
     await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.19');

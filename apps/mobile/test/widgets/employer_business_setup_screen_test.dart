@@ -78,16 +78,16 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
-    // Card trạng thái xác minh SĐT (đặc tả §4) đẩy Dropdown "Khu vực" ra khỏi viewport mặc định -
+    // Card trạng thái xác minh SĐT (đặc tả §4) đẩy khu vực picker ra khỏi viewport mặc định -
     // cuộn tới trước khi tap (cùng pattern dragUntilVisible dùng cho các control khác trong file).
+    // Đặc tả Phase F: DropdownButtonFormField -> ChoiceChip (search + chọn), chỉ 1 area nên
+    // không hiện ô tìm kiếm (ngưỡng > 6 area).
     await tester.dragUntilVisible(
-      find.byType(DropdownButtonFormField<String>),
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
       find.byType(ListView),
       const Offset(0, -200),
     );
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Vĩnh Hải').last);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
     await tester.pumpAndSettle();
 
     await scrollToSaveButton(tester);
@@ -140,16 +140,14 @@ void main() {
 
     await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
     await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
-    // Card trạng thái xác minh SĐT (đặc tả §4) đẩy Dropdown "Khu vực" ra khỏi viewport mặc định -
+    // Card trạng thái xác minh SĐT (đặc tả §4) đẩy khu vực picker ra khỏi viewport mặc định -
     // cuộn tới trước khi tap.
     await tester.dragUntilVisible(
-      find.byType(DropdownButtonFormField<String>),
+      find.widgetWithText(ChoiceChip, 'Vĩnh Hải'),
       find.byType(ListView),
       const Offset(0, -200),
     );
-    await tester.tap(find.byType(DropdownButtonFormField<String>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Vĩnh Hải').last);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
     await tester.pumpAndSettle();
 
     // Toạ độ THẬT do employer tự nhập - khác hẳn giá trị hard-code cũ 12.2388/109.1967.
@@ -169,6 +167,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(sentLocationBody, isNotNull);
+    // Chọn Area qua ChoiceChip phải lưu đúng areaId thật (không phải tên hiển thị).
+    expect(sentLocationBody!['areaId'], 'area-1');
     expect(sentLocationBody!['latitude'], 12.3);
     expect(sentLocationBody!['longitude'], 109.15);
     // Không còn gửi toạ độ trung tâm Nha Trang hard-code cũ.
@@ -297,5 +297,91 @@ void main() {
       const Offset(0, -200),
     );
     expect(find.textContaining('Vị trí đã chọn: 12.300000, 109.150000'), findsOneWidget);
+  });
+
+  // Đặc tả Phase F (địa danh cũ): danh sách Area cũ dài (> 6) phải có ô tìm kiếm, gõ đúng tên
+  // phải lọc ra đúng khu vực, và chọn khu vực đã lọc phải lưu đúng areaId thật lên API.
+  testWidgets('searching the area list filters to the matching old ward and selecting it saves the correct areaId', (tester) async {
+    Map<String, dynamic>? sentLocationBody;
+    final manyAreas = [
+      {'id': 'a1', 'name': 'Lộc Thọ'},
+      {'id': 'a2', 'name': 'Tân Lập'},
+      {'id': 'a3', 'name': 'Phước Tiến'},
+      {'id': 'a4', 'name': 'Phước Tân'},
+      {'id': 'a5', 'name': 'Phước Long'},
+      {'id': 'a6', 'name': 'Phước Hải'},
+      {'id': 'a7', 'name': 'Vĩnh Hải'},
+      {'id': 'a8', 'name': 'Vĩnh Phước'},
+    ];
+
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(
+      session,
+      httpClient: MockClient((request) async {
+        if (request.url.path.endsWith('/areas')) return jsonResponse(manyAreas, 200);
+        if (request.url.path.endsWith('/cities')) {
+          return jsonResponse([
+            {'id': 'city-1', 'name': 'Nha Trang'},
+          ], 200);
+        }
+        if (request.url.path.endsWith('/me/employer-profile') && request.method == 'GET') {
+          return http.Response('not found', 404);
+        }
+        if (request.url.path.endsWith('/me/employer-profile/locations') && request.method == 'GET') {
+          return jsonResponse([], 200);
+        }
+        if (request.url.path.endsWith('/me/employer-profile') && request.method == 'PUT') {
+          return jsonResponse({'id': 'emp-1', 'businessName': 'Quán Test'}, 200);
+        }
+        if (request.url.path.endsWith('/me/employer-profile/locations') && request.method == 'POST') {
+          sentLocationBody = jsonDecode(request.body) as Map<String, dynamic>;
+          return jsonResponse({'id': 'loc-1'}, 201);
+        }
+        if (request.url.path.endsWith('/me')) {
+          return jsonResponse({'id': 'u1', 'phone': null, 'isPhoneVerified': false}, 200);
+        }
+        return http.Response('unexpected: ${request.method} ${request.url.path}', 404);
+      }),
+    );
+
+    await tester.pumpWidget(buildScreen(api));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Tên cửa hàng/doanh nghiệp'), 'Quán Test');
+    await tester.enterText(find.widgetWithText(TextField, 'Địa chỉ'), '12 Trần Phú');
+
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Tìm khu vực (vd: Vĩnh Hải, Lộc Thọ)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    // Trước khi search, cả 8 area đều hiện.
+    expect(find.widgetWithText(ChoiceChip, 'Lộc Thọ'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'), findsOneWidget);
+
+    await tester.enterText(find.widgetWithText(TextField, 'Tìm khu vực (vd: Vĩnh Hải, Lộc Thọ)'), 'Vĩnh Hải');
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'Lộc Thọ'), findsNothing);
+
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Vĩnh Hải'));
+    await tester.pumpAndSettle();
+
+    await tester.dragUntilVisible(
+      find.widgetWithText(TextField, 'Vĩ độ (latitude)'),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Vĩ độ (latitude)'), '12.30');
+    await tester.enterText(find.widgetWithText(TextField, 'Kinh độ (longitude)'), '109.15');
+    await tester.pumpAndSettle();
+
+    await scrollToSaveButton(tester);
+    await tester.tap(find.text('LƯU HỒ SƠ'));
+    await tester.pumpAndSettle();
+
+    expect(sentLocationBody, isNotNull);
+    expect(sentLocationBody!['areaId'], 'a7');
   });
 }
