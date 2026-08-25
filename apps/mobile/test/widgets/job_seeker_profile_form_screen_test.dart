@@ -108,6 +108,10 @@ void main() {
     }));
     await tester.pumpAndSettle();
 
+    // Form dài hơn viewport của widget test (có thêm ô chọn đơn vị lương) - nút LƯU nằm ngoài
+    // vùng đã build của ListView nên phải cuộn tới trước khi bấm.
+    await tester.dragUntilVisible(find.text('LƯU HỒ SƠ'), find.byType(ListView), const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('LƯU HỒ SƠ'));
     await tester.pumpAndSettle();
 
@@ -132,6 +136,10 @@ void main() {
     await tester.pumpWidget(buildScreen(api, existing: {'fullName': 'Nguyễn Văn D'}));
     await tester.pumpAndSettle();
 
+    // Form dài hơn viewport của widget test (có thêm ô chọn đơn vị lương) - nút LƯU nằm ngoài
+    // vùng đã build của ListView nên phải cuộn tới trước khi bấm.
+    await tester.dragUntilVisible(find.text('LƯU HỒ SƠ'), find.byType(ListView), const Offset(0, -200));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('LƯU HỒ SƠ'));
     await tester.pumpAndSettle();
 

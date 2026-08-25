@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -156,5 +157,73 @@ void main() {
 
     expect(find.byIcon(Icons.bookmark), findsOneWidget);
     expect(find.byIcon(Icons.bookmark_border), findsNothing);
+  });
+
+  // Phần H (phase QA Job Seeker): double-tap nút lưu trên JobCard ở Home chỉ được gửi ĐÚNG 1
+  // request - không giống JobDetailScreen._toggleSave() (đã có chốt _togglingSave) hay
+  // SavedJobsScreen._unsave() (tự an toàn vì xoá khỏi list ngay lập tức trước khi await),
+  // HomeScreen._toggleSave() không có chốt nào, nút bookmark vẫn bấm được trong lúc request đầu
+  // còn đang treo.
+  testWidgets('double-tap nút lưu trên JobCard (Home) chỉ gửi ĐÚNG 1 POST /saved-jobs/job-1', (tester) async {
+    var saveCallCount = 0;
+    final saveGate = Completer<void>();
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(
+      session,
+      httpClient: MockClient((request) async {
+        if (request.url.path.endsWith('/jobs') && request.method == 'GET') {
+          return jsonResponse({
+            'data': [
+              {
+                'id': 'job-1',
+                'title': 'Phục vụ nhà hàng',
+                'employer': {'id': 'e1', 'businessName': 'Quán Test', 'verificationLevel': 'UNVERIFIED'},
+                'salaryMin': 20000,
+                'salaryMax': 25000,
+                'salaryUnit': 'HOUR',
+                'employmentType': 'PART_TIME',
+                'status': 'ACTIVE',
+              },
+            ],
+            'meta': {'total': 1, 'limit': 20, 'offset': 0},
+          }, 200);
+        }
+        if (request.url.path.endsWith('/applications/me')) return jsonResponse([], 200);
+        if (request.url.path.endsWith('/saved-jobs') && request.method == 'GET') return jsonResponse([], 200);
+        if (request.url.path.endsWith('/saved-jobs/job-1') && request.method == 'POST') {
+          saveCallCount += 1;
+          await saveGate.future;
+          return jsonResponse(null, 201);
+        }
+        if (request.url.path.endsWith('/categories') || request.url.path.endsWith('/areas')) {
+          return jsonResponse([], 200);
+        }
+        return http.Response('not found: ${request.url.path}', 404);
+      }),
+    );
+
+    await session.setTokens(access: 'fake-access', refresh: 'fake-refresh', roles: ['JOB_SEEKER']);
+    await tester.pumpWidget(MultiProvider(
+      providers: [
+        ChangeNotifierProvider<Session>.value(value: session),
+        Provider<ApiClient>(create: (_) => api),
+        Provider<JobsService>(create: (_) => JobsService(api)),
+        Provider<ApplicationsService>(create: (_) => ApplicationsService(api)),
+        Provider<SavedJobsService>(create: (_) => SavedJobsService(api)),
+      ],
+      child: const MaterialApp(home: HomeScreen()),
+    ));
+    await tester.pumpAndSettle();
+
+    final saveButton = find.byIcon(Icons.bookmark_border);
+    await tester.tap(saveButton);
+    await tester.tap(saveButton, warnIfMissed: false);
+    await tester.pump();
+
+    expect(saveCallCount, 1, reason: 'double-tap nút lưu không được gửi 2 request POST /saved-jobs');
+
+    saveGate.complete();
+    await tester.pumpAndSettle();
+    expect(saveCallCount, 1);
   });
 }

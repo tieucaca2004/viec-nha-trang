@@ -153,4 +153,46 @@ void main() {
 
     expect(find.text('Hoàn thiện hồ sơ để ứng tuyển'), findsOneWidget);
   });
+
+  // ---------- Phần G/D (phase QA Job Seeker): double-tap ỨNG TUYỂN chỉ gửi 1 POST ----------
+
+  testWidgets('JobDetailScreen: double-tap ỨNG TUYỂN 1 CHẠM chỉ gửi ĐÚNG 1 POST /jobs/:id/apply', (tester) async {
+    final session = Session(storage: InMemoryTokenStorage());
+    await session.setTokens(access: 'fake-access', refresh: 'fake-refresh', roles: ['JOB_SEEKER']);
+    var applyCallCount = 0;
+    final api = ApiClient(
+      session,
+      httpClient: MockClient((request) async {
+        final path = request.url.path;
+        if (path.endsWith('/jobs/job-1')) return jsonResponse(jobJson, 200);
+        if (path.endsWith('/applications/me')) return jsonResponse([], 200);
+        if (path.endsWith('/saved-jobs') && request.method == 'GET') return jsonResponse([], 200);
+        if (path.endsWith('/me/job-seeker-profile')) return jsonResponse({'fullName': 'Nguyễn Văn A'}, 200);
+        if (path.endsWith('/jobs/job-1/apply') && request.method == 'POST') {
+          applyCallCount += 1;
+          return jsonResponse({'id': 'app-1', 'status': 'NEW', 'job': jobJson}, 201);
+        }
+        return http.Response('unexpected: ${request.method} $path', 404);
+      }),
+    );
+
+    await tester.pumpWidget(wrapDetail(api, session));
+    await tester.pumpAndSettle();
+
+    // Bấm 2 lần liên tiếp KHÔNG chờ profile fetch xong ở giữa - _applying chỉ được set true SAU
+    // khi getJobSeekerProfile() trả về và qua dialog xác nhận, nên nếu không có chốt chặn ở đầu
+    // _apply(), 2 lần bấm gần nhau đều lọt qua và mỗi lần đều tự mở dialog xác nhận riêng.
+    await tester.tap(find.text('ỨNG TUYỂN 1 CHẠM'));
+    await tester.tap(find.text('ỨNG TUYỂN 1 CHẠM'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Xác nhận dialog (có thể có 1 hoặc nhiều dialog xếp chồng tuỳ bug có tồn tại hay không) -
+    // bấm ỨNG TUYỂN trên dialog đang hiện tới khi không còn dialog nào.
+    while (find.text('Bạn muốn ứng tuyển công việc này?').evaluate().isNotEmpty) {
+      await tester.tap(find.widgetWithText(FilledButton, 'ỨNG TUYỂN').last);
+      await tester.pumpAndSettle();
+    }
+
+    expect(applyCallCount, 1, reason: 'double-tap không được gửi 2 request ứng tuyển');
+  });
 }

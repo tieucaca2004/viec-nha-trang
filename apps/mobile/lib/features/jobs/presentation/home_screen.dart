@@ -38,6 +38,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _savedJobIds = {};
   List<JobCategory> _categories = [];
   List<Area> _areas = [];
+  // Chốt chống double-tap cho nút lưu trên JobCard - khác với JobDetailScreen (_togglingSave) hay
+  // SavedJobsScreen (tự an toàn nhờ xoá khỏi list ngay lập tức trước khi await), nút lưu ở đây
+  // không có gì ngăn 2 lần bấm gần nhau đều lọt qua trong lúc request đầu còn đang treo.
+  final Set<String> _togglingSaveJobIds = {};
 
   static const _pageSize = 20;
 
@@ -114,6 +118,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // Đặc tả AUTH UX Part 3/6: khách bấm Lưu -> hỏi xác thực (KHÔNG âm thầm lưu lạc quan rồi lỗi
   // 401 mới báo) -> xác thực xong tự tiếp tục lưu đúng job này, không cần bấm lại.
   Future<void> _toggleSave(Job job) async {
+    // Bug thật: không có gì chặn 2 lần bấm gần nhau trong lúc request đầu còn đang treo (khác
+    // JobDetailScreen._toggleSave() đã có _togglingSave, hay SavedJobsScreen._unsave() tự an
+    // toàn nhờ xoá khỏi list trước khi await) - dẫn tới 2 request POST/DELETE /saved-jobs.
+    if (_togglingSaveJobIds.contains(job.id)) return;
+    setState(() => _togglingSaveJobIds.add(job.id));
     final wasSaved = _savedJobIds.contains(job.id);
     try {
       final saved = await runWithAuth<bool>(
@@ -136,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+    } finally {
+      if (mounted) setState(() => _togglingSaveJobIds.remove(job.id));
     }
   }
 
@@ -373,7 +384,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _loadSavedIds();
               }),
               onApply: () => _apply(job),
-              onToggleSave: () => _toggleSave(job),
+              onToggleSave: _togglingSaveJobIds.contains(job.id) ? null : () => _toggleSave(job),
             );
           },
         ),
