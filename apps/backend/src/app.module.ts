@@ -19,6 +19,7 @@ import { ReportsModule } from './reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
 import { JobHunterModule } from './job-hunter/job-hunter.module';
+import { LocationBootstrapService } from './common/services/location-bootstrap.service';
 
 @Module({
   imports: [
@@ -49,6 +50,6 @@ import { JobHunterModule } from './job-hunter/job-hunter.module';
     JobHunterModule,
   ],
   controllers: [HealthController],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, LocationBootstrapService],
 })
 export class AppModule {}
