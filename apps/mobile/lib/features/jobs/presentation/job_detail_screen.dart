@@ -8,6 +8,7 @@ import '../../../shared/widgets/auth_prompt.dart';
 import '../../applications/data/applications_service.dart';
 import '../../profile/data/job_seeker_profile_service.dart';
 import '../../profile/presentation/job_seeker_profile_form_screen.dart';
+import '../../reports/data/reports_service.dart';
 import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
 import '../../../shared/widgets/phone_verification_sheet.dart';
@@ -240,6 +241,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
+  Future<void> _openReportDialog() async {
+    final reported = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ReportJobDialog(jobId: widget.jobId, reportsService: context.read<ReportsService>()),
+    );
+    if (reported == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã gửi báo cáo. Cảm ơn bạn đã giúp giữ an toàn cho cộng đồng.')),
+      );
+    }
+  }
+
   Future<void> _call(String? phone) async {
     if (phone == null) return;
     await launchUrl(Uri.parse('tel:$phone'));
@@ -261,6 +274,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               icon: Icon(_saved ? Icons.bookmark : Icons.bookmark_border),
               tooltip: _saved ? 'Bỏ lưu việc này' : 'Lưu việc này',
               onPressed: _toggleSave,
+            ),
+          // Báo cáo cần đăng nhập (POST /reports có JwtAuthGuard) - khách không thấy mục này.
+          if (_job != null && context.watch<Session>().isLoggedIn)
+            PopupMenuButton<String>(
+              tooltip: 'Tuỳ chọn khác',
+              onSelected: (value) {
+                if (value == 'report') _openReportDialog();
+              },
+              itemBuilder: (_) => const [PopupMenuItem(value: 'report', child: Text('Báo cáo tin'))],
             ),
         ],
       ),
@@ -353,6 +375,92 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Dialog tự gửi POST /reports để lỗi API hiện ngay trong dialog và người dùng thử lại được mà
+/// không phải chọn lại lý do. Đóng (trả true) chỉ khi POST thành công.
+class _ReportJobDialog extends StatefulWidget {
+  final String jobId;
+  final ReportsService reportsService;
+  const _ReportJobDialog({required this.jobId, required this.reportsService});
+
+  @override
+  State<_ReportJobDialog> createState() => _ReportJobDialogState();
+}
+
+class _ReportJobDialogState extends State<_ReportJobDialog> {
+  String? _reason;
+  final _noteController = TextEditingController();
+  bool _submitting = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_submitting || _reason == null) return;
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+    try {
+      await widget.reportsService.reportJob(jobId: widget.jobId, reason: _reason!, note: _noteController.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _errorMessage = e.userMessage);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Báo cáo tin tuyển dụng'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in ReportsService.jobReasonLabels.entries)
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: entry.key,
+                groupValue: _reason,
+                title: Text(entry.value),
+                onChanged: _submitting ? null : (value) => setState(() => _reason = value),
+              ),
+            TextField(
+              controller: _noteController,
+              enabled: !_submitting,
+              maxLines: 3,
+              decoration: const InputDecoration(hintText: 'Mô tả thêm (không bắt buộc)'),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
+          child: const Text('HUỶ'),
+        ),
+        FilledButton(
+          onPressed: (_reason == null || _submitting) ? null : _submit,
+          child: _submitting
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('GỬI BÁO CÁO'),
+        ),
+      ],
     );
   }
 }

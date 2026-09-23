@@ -1,4 +1,4 @@
-import { Body, Controller, Injectable, Module, Post, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Injectable, Module, NotFoundException, Post, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString } from 'class-validator';
 import { ReportReason, ReportTargetType } from '@prisma/client';
@@ -34,7 +34,20 @@ class CreateReportDto {
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  create(reporterId: string, dto: CreateReportDto) {
+  async create(reporterId: string, dto: CreateReportDto) {
+    if (dto.targetType === 'JOB') {
+      if (!dto.jobId) {
+        throw new BadRequestException('Báo cáo tin tuyển dụng cần có jobId.');
+      }
+      if (dto.reviewId || dto.targetUserId) {
+        throw new BadRequestException('Báo cáo tin tuyển dụng chỉ nhận jobId.');
+      }
+      // Kiểm tra trước thay vì để FK violation của Prisma rơi thành 500.
+      const job = await this.prisma.job.findUnique({ where: { id: dto.jobId }, select: { id: true } });
+      if (!job) {
+        throw new NotFoundException('Không tìm thấy tin tuyển dụng.');
+      }
+    }
     return this.prisma.report.create({ data: { reporterId, ...dto } });
   }
 }

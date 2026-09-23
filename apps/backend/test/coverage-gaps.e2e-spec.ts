@@ -222,6 +222,38 @@ describe('Coverage gaps from FULL AUDIT item 10', () => {
         .send({ targetType: 'JOB', reason: 'SPAM' })
         .expect(401);
     });
+
+    it('rejects a JOB report without jobId with 400', async () => {
+      await request(app.getHttpServer())
+        .post('/api/v1/reports')
+        .set('Authorization', `Bearer ${seekerToken}`)
+        .send({ targetType: 'JOB', reason: 'SPAM' })
+        .expect(400);
+    });
+
+    it('rejects a JOB report that points at a review/user instead of a job with 400', async () => {
+      const jobId = await createJob({ title: 'Tin báo cáo sai target - coverage test' });
+      await request(app.getHttpServer())
+        .post('/api/v1/reports')
+        .set('Authorization', `Bearer ${seekerToken}`)
+        .send({ targetType: 'JOB', jobId, targetUserId: 'some-user-id', reason: 'SPAM' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .post('/api/v1/reports')
+        .set('Authorization', `Bearer ${seekerToken}`)
+        .send({ targetType: 'JOB', reviewId: 'some-review-id', reason: 'SPAM' })
+        .expect(400);
+    });
+
+    it('rejects a JOB report for a job that does not exist with 404 (not 500), and stores nothing', async () => {
+      const missingJobId = '00000000-0000-4000-8000-000000000000';
+      await request(app.getHttpServer())
+        .post('/api/v1/reports')
+        .set('Authorization', `Bearer ${seekerToken}`)
+        .send({ targetType: 'JOB', jobId: missingJobId, reason: 'FAKE_JOB' })
+        .expect(404);
+      expect(await prisma.report.count({ where: { jobId: missingJobId } })).toBe(0);
+    });
   });
 
   describe('Saved jobs duplicate-save idempotency', () => {
