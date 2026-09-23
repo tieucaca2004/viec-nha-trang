@@ -36,6 +36,7 @@ void main() {
     WidgetTester tester, {
     required List<dynamic> applications,
     List<dynamic> existingReviews = const [],
+    Future<void>? reviewsGetGate,
     FutureOr<http.Response> Function(http.Request request)? onPostReview,
   }) async {
     final session = Session(storage: InMemoryTokenStorage());
@@ -46,6 +47,7 @@ void main() {
           return jsonResponse(applications, 200);
         }
         if (request.url.path.endsWith('/reviews') && request.method == 'GET') {
+          if (reviewsGetGate != null) await reviewsGetGate;
           return jsonResponse(existingReviews, 200);
         }
         if (request.url.path.endsWith('/reviews') && request.method == 'POST') {
@@ -89,7 +91,7 @@ void main() {
       tester,
       applications: [buildApplication(id: 'a1', status: 'HIRED')],
       existingReviews: [
-        {'id': 'r1', 'applicationId': 'a1', 'rating': 5},
+        {'id': 'r1', 'reviewerType': 'JOB_SEEKER', 'applicationId': 'a1', 'rating': 5},
       ],
     );
     await tester.tap(find.text('Đã nhận'));
@@ -167,16 +169,16 @@ void main() {
     expect(find.text('ĐÁNH GIÁ'), findsOneWidget);
   });
 
-  testWidgets('double-tap nút ĐÁNH GIÁ chỉ mở đúng 1 dialog / gửi đúng 1 request (chặn double-submit)',
+  testWidgets('double-tap GỬI trong lúc POST đang treo chỉ gửi ĐÚNG 1 request, CTA bị khoá tới khi xong',
       (tester) async {
     var postCount = 0;
-    final gate = Completer<void>();
+    final postGate = Completer<void>();
     await pumpScreen(
       tester,
       applications: [buildApplication(id: 'a1', status: 'HIRED')],
       onPostReview: (_) async {
         postCount += 1;
-        await gate.future;
+        await postGate.future;
         return jsonResponse({'id': 'review-1'}, 201);
       },
     );
@@ -188,15 +190,65 @@ void main() {
     await tester.tap(find.byIcon(Icons.star_border).first);
     await tester.pump();
 
-    final submitButton = find.text('GỬI');
-    await tester.tap(submitButton);
+    // 2 lần bấm liên tiếp, không pump frame nào ở giữa - đúng kiểu double-tap thật.
+    await tester.tap(find.text('GỬI'));
+    await tester.tap(find.text('GỬI'), warnIfMissed: false);
     await tester.pump();
-    // Dialog đã đóng ngay sau lần bấm đầu (Navigator.pop trả về input) - không còn nút GỬI để bấm
-    // lần 2, nhưng request đang treo ở gate. Xác nhận vẫn chỉ có đúng 1 request đã gửi.
-    expect(postCount, 1);
+    await tester.pump();
 
-    gate.complete();
+    expect(postCount, 1, reason: 'double-tap GỬI không được gửi 2 POST /reviews');
+    expect(find.byType(ApplicationsScreen), findsOneWidget, reason: 'lần bấm thứ 2 không được pop luôn màn hình');
+    final cta = tester.widget<OutlinedButton>(find.byType(OutlinedButton));
+    expect(cta.onPressed, isNull, reason: 'CTA phải bị khoá trong lúc POST đang treo');
+
+    postGate.complete();
     await tester.pumpAndSettle();
     expect(postCount, 1);
+    expect(find.text('Đã đánh giá'), findsOneWidget);
+  });
+
+  testWidgets('review do EMPLOYER viết cho cùng applicationId KHÔNG được tính là ứng viên đã đánh giá',
+      (tester) async {
+    await pumpScreen(
+      tester,
+      applications: [buildApplication(id: 'a1', status: 'HIRED')],
+      // Đúng shape backend lưu cho review EMPLOYER: có cả employerId lẫn jobSeekerId, nên
+      // GET /reviews?targetType=employer vẫn trả về nó.
+      existingReviews: [
+        {'id': 'r1', 'reviewerType': 'EMPLOYER', 'employerId': 'e1', 'jobSeekerId': 's1', 'applicationId': 'a1', 'rating': 2},
+      ],
+    );
+    await tester.tap(find.text('Đã nhận'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ĐÁNH GIÁ'), findsOneWidget);
+    expect(find.text('Đã đánh giá'), findsNothing);
+  });
+
+  testWidgets('GET /reviews cũ trả về SAU khi POST thành công không được làm CTA hiện lại', (tester) async {
+    final getGate = Completer<void>();
+    await pumpScreen(
+      tester,
+      applications: [buildApplication(id: 'a1', status: 'HIRED')],
+      // Snapshot chụp trước khi POST ghi xong: chưa có review nào.
+      existingReviews: const [],
+      reviewsGetGate: getGate.future,
+    );
+    await tester.tap(find.text('Đã nhận'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ĐÁNH GIÁ'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.star_border).first);
+    await tester.pump();
+    await tester.tap(find.text('GỬI'));
+    await tester.pumpAndSettle();
+    expect(find.text('Đã đánh giá'), findsOneWidget);
+
+    getGate.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Đã đánh giá'), findsOneWidget);
+    expect(find.text('ĐÁNH GIÁ'), findsNothing);
   });
 }

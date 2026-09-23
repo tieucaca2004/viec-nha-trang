@@ -43,6 +43,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
   // _togglingSaveJobIds ở HomeScreen/_applyInFlight ở JobDetailScreen.
   Set<String> _reviewedApplicationIds = {};
   final Set<String> _submittingReviewIds = {};
+  // POST đã thành công trong phiên này - luôn được gộp vào khi GET /reviews trả về, để response
+  // GET chụp trước lúc POST ghi xong không làm CTA "ĐÁNH GIÁ" hiện lại.
+  final Set<String> _submittedReviewIds = {};
 
   @override
   void initState() {
@@ -88,14 +91,18 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
       try {
         final reviews = await reviewsService.listForEmployer(employerId);
         for (final r in reviews) {
-          final appId = (r as Map)['applicationId'];
+          final review = r as Map;
+          // Backend gán employerId cho cả review do EMPLOYER viết về ứng viên, nên GET theo
+          // employer trả về cả 2 chiều - chỉ review JOB_SEEKER mới là "ứng viên đã đánh giá".
+          if (review['reviewerType'] != 'JOB_SEEKER') continue;
+          final appId = review['applicationId'];
           if (appId != null) reviewedIds.add(appId.toString());
         }
       } catch (_) {
         // Bỏ qua lỗi của riêng 1 employer - không chặn các employer khác đã tải được.
       }
     }
-    if (mounted) setState(() => _reviewedApplicationIds = reviewedIds);
+    if (mounted) setState(() => _reviewedApplicationIds = {...reviewedIds, ..._submittedReviewIds});
   }
 
   Future<void> _openReviewDialog(JobApplication app) async {
@@ -117,6 +124,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> with SingleTick
             rating: input.rating,
             comment: input.comment,
           );
+      _submittedReviewIds.add(app.id);
       if (!mounted) return;
       setState(() => _reviewedApplicationIds = {..._reviewedApplicationIds, app.id});
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã gửi đánh giá. Cảm ơn bạn!')));
