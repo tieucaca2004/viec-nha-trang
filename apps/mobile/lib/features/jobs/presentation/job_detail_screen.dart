@@ -420,6 +420,15 @@ class _ReportJobDialogState extends State<_ReportJobDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Chặn đóng dialog (chạm ra ngoài / nút Back) khi POST đang chạy - nếu không report vẫn được
+    // lưu nhưng mất thông báo thành công và người dùng dễ gửi lại lần nữa.
+    return PopScope(
+      canPop: !_submitting,
+      child: _buildDialog(context),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context) {
     return AlertDialog(
       title: const Text('Báo cáo tin tuyển dụng'),
       content: SingleChildScrollView(

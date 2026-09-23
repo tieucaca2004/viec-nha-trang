@@ -234,6 +234,138 @@ void main() {
     expect(find.byType(AlertDialog), findsNothing);
   });
 
+  group('không cho đóng dialog khi POST đang treo', () {
+    const successText = 'Đã gửi báo cáo. Cảm ơn bạn đã giúp giữ an toàn cho cộng đồng.';
+    final pendingSubmit = find.descendant(of: find.byType(AlertDialog), matching: find.byType(FilledButton));
+
+    Future<void> tapOutsideDialog(WidgetTester tester) async {
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pump();
+    }
+
+    Future<void> pressSystemBack(WidgetTester tester) async {
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+    }
+
+    testWidgets('chạm ra ngoài lúc đang gửi: dialog vẫn mở, vẫn loading, 1 POST; xong thì đóng + báo thành công',
+        (tester) async {
+      var postCount = 0;
+      final gate = Completer<void>();
+      await pumpDetail(tester, onReport: (_) async {
+        postCount += 1;
+        await gate.future;
+        return jsonResponse({'id': 'report-1'}, 201);
+      });
+      await openReportDialog(tester);
+      await tester.tap(find.text('Tin rác / spam'));
+      await tester.pump();
+      await tester.tap(submitButton);
+      await tester.pump();
+
+      await tapOutsideDialog(tester);
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(tester.widget<FilledButton>(pendingSubmit).onPressed, isNull);
+      expect(postCount, 1);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(postCount, 1);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text(successText), findsOneWidget);
+    });
+
+    testWidgets('nút Back hệ thống lúc đang gửi: dialog vẫn mở, 1 POST; xong thì đóng + báo thành công',
+        (tester) async {
+      var postCount = 0;
+      final gate = Completer<void>();
+      await pumpDetail(tester, onReport: (_) async {
+        postCount += 1;
+        await gate.future;
+        return jsonResponse({'id': 'report-1'}, 201);
+      });
+      await openReportDialog(tester);
+      await tester.tap(find.text('Tin rác / spam'));
+      await tester.pump();
+      await tester.tap(submitButton);
+      await tester.pump();
+
+      await pressSystemBack(tester);
+
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(JobDetailScreen), findsOneWidget, reason: 'Back không được pop luôn JobDetailScreen');
+      expect(postCount, 1);
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(postCount, 1);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text(successText), findsOneWidget);
+    });
+
+    testWidgets('POST lỗi sau khi đã thử đóng dialog: dialog vẫn mở, hiện lỗi, gửi lại được', (tester) async {
+      var postCount = 0;
+      final gate = Completer<void>();
+      await pumpDetail(tester, onReport: (_) async {
+        postCount += 1;
+        if (postCount == 1) {
+          await gate.future;
+          return jsonResponse({'message': 'boom'}, 500);
+        }
+        return jsonResponse({'id': 'report-1'}, 201);
+      });
+      await openReportDialog(tester);
+      await tester.tap(find.text('Tin rác / spam'));
+      await tester.pump();
+      await tester.tap(submitButton);
+      await tester.pump();
+
+      await tapOutsideDialog(tester);
+      await pressSystemBack(tester);
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(postCount, 1);
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(find.text(ApiException(500, 'boom').userMessage), findsOneWidget);
+      expect(find.text(successText), findsNothing);
+
+      await tester.tap(submitButton);
+      await tester.pumpAndSettle();
+
+      expect(postCount, 2);
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.text(successText), findsOneWidget);
+    });
+
+    testWidgets('khi KHÔNG đang gửi: chạm ra ngoài và nút Back vẫn đóng dialog bình thường, không gửi POST',
+        (tester) async {
+      final requests = <String>[];
+      await pumpDetail(tester, requests: requests);
+
+      await openReportDialog(tester);
+      await tester.tap(find.text('Tin rác / spam'));
+      await tester.pump();
+      await tapOutsideDialog(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+
+      await openReportDialog(tester);
+      await pressSystemBack(tester);
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(find.byType(JobDetailScreen), findsOneWidget);
+
+      expect(requests.where((r) => r.contains('/reports')), isEmpty);
+      expect(find.text(successText), findsNothing);
+    });
+  });
+
   testWidgets('khách chưa đăng nhập không thấy mục báo cáo và không có POST /reports nào', (tester) async {
     final requests = <String>[];
     await pumpDetail(tester, loggedIn: false, requests: requests);
