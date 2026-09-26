@@ -171,7 +171,24 @@ export class JobsService {
 
   async update(userId: string, jobId: string, dto: UpdateJobDto) {
     const job = await this.assertOwnership(userId, jobId);
-    return this.prisma.job.update({ where: { id: job.id }, data: { ...dto } });
+    // Cùng quy tắc với create(): địa điểm phải thuộc chính employer này, và city/area/toạ độ của tin
+    // luôn suy ra từ địa điểm - nếu không, đổi địa điểm sẽ để lại khu vực/toạ độ cũ (lọc theo khu
+    // vực/bán kính sai) hoặc gắn tin vào địa điểm của employer khác.
+    const location = await this.prisma.employerLocation.findUnique({ where: { id: dto.employerLocationId } });
+    if (!location || location.employerId !== job.employerId) {
+      throw new ForbiddenException('Địa điểm không thuộc nhà tuyển dụng này.');
+    }
+    return this.prisma.job.update({
+      where: { id: job.id },
+      data: {
+        ...dto,
+        employerLocationId: location.id,
+        cityId: location.cityId,
+        areaId: location.areaId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+      },
+    });
   }
 
   async close(userId: string, jobId: string) {

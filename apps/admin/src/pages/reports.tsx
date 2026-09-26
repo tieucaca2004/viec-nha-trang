@@ -7,6 +7,8 @@ interface AdminReport {
   reason: string;
   status: string;
   note: string | null;
+  jobId: string | null;
+  job: { id: string; title: string } | null;
 }
 
 const STATUSES = ['OPEN', 'IN_REVIEW', 'RESOLVED', 'DISMISSED'];
@@ -34,6 +36,7 @@ export default function ReportsPage() {
         <thead>
           <tr>
             <th style={thStyle}>Loại</th>
+            <th style={thStyle}>Tin bị báo cáo</th>
             <th style={thStyle}>Lý do</th>
             <th style={thStyle}>Ghi chú</th>
             <th style={thStyle}>Trạng thái</th>
@@ -44,6 +47,7 @@ export default function ReportsPage() {
           {reports.map((r) => (
             <tr key={r.id}>
               <td style={tdStyle}>{r.targetType}</td>
+              <td style={tdStyle}>{r.job ? `${r.job.title} (${r.job.id})` : r.jobId ?? '—'}</td>
               <td style={tdStyle}>{r.reason}</td>
               <td style={tdStyle}>{r.note}</td>
               <td style={tdStyle}>{r.status}</td>
