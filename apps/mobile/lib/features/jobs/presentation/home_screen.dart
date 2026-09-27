@@ -352,7 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return AsyncStateView<List<Job>>(
       loading: _loading,
       error: _error,
-      data: _loading ? null : _jobs,
+      // _jobs khởi tạo [] (không null) - phải truyền null khi lỗi, nếu không AsyncStateView hiện
+      // "Chưa có việc phù hợp" thay vì lỗi + THỬ LẠI (tái hiện thật: GET /jobs 500 trên staging).
+      data: (_loading || _error != null) ? null : _jobs,
       isEmpty: (jobs) => jobs.isEmpty,
       emptyMessage: 'Chưa có việc phù hợp. Thử đổi bộ lọc nhé.',
       onRetry: _load,

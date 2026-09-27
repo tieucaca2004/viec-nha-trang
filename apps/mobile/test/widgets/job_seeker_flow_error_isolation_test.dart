@@ -93,6 +93,39 @@ void main() {
     expect(find.text('Phục vụ'), findsWidgets, reason: 'categories phải hiển thị dù /areas lỗi (bug đã sửa)');
   });
 
+  // ---------- HomeScreen danh sách việc: /jobs lỗi phải hiện lỗi + THỬ LẠI ----------
+
+  testWidgets('HomeScreen: GET /jobs lỗi 500 -> hiện lỗi + THỬ LẠI, KHÔNG giả làm "chưa có việc phù hợp"',
+      (tester) async {
+    // Tái hiện thật trên staging (emulator): GET /jobs 500 nhưng màn hình chỉ hiện empty state, vì
+    // _jobs khởi tạo [] (khác null) nên AsyncStateView bỏ qua nhánh lỗi.
+    var jobsCallCount = 0;
+    final session = Session(storage: InMemoryTokenStorage());
+    final api = ApiClient(
+      session,
+      httpClient: MockClient((request) async {
+        final path = request.url.path;
+        if (path.endsWith('/jobs') && request.method == 'GET') {
+          jobsCallCount += 1;
+          return jsonResponse({'statusCode': 500, 'message': 'Internal server error'}, 500);
+        }
+        if (path.endsWith('/categories')) return jsonResponse(categoriesJson, 200);
+        if (path.endsWith('/areas')) return jsonResponse([], 200);
+        return http.Response('unexpected: $path', 404);
+      }),
+    );
+
+    await tester.pumpWidget(wrapHome(api, session));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Chưa có việc phù hợp. Thử đổi bộ lọc nhé.'), findsNothing);
+    expect(find.text('THỬ LẠI'), findsOneWidget);
+
+    await tester.tap(find.text('THỬ LẠI'));
+    await tester.pumpAndSettle();
+    expect(jobsCallCount, 2, reason: 'THỬ LẠI phải gọi lại GET /jobs');
+  });
+
   // ---------- JobDetailScreen ỨNG TUYỂN: lỗi khi kiểm tra hồ sơ không được im lặng ----------
 
   testWidgets(
