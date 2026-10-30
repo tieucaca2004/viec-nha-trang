@@ -64,4 +64,45 @@ describe('AuthService.requestEmailVerification - resend cooldown', () => {
     });
     expect(emailProvider.sendVerificationEmail).toHaveBeenCalledTimes(1);
   });
+
+  // Regression: trước đây bản ghi mã được tạo TRƯỚC khi gửi, và nếu gửi email thất bại thì bản ghi
+  // đó vẫn còn (consumedAt=null). Lần gửi lại kế tiếp - kể cả ở màn Đăng nhập (dùng chung đúng
+  // logic này) - bị cooldown giả "Vui lòng đợi N giây" chặn, khiến CẢ đăng ký lẫn đăng nhập cùng
+  // "hỏng". Đảm bảo: gửi lỗi -> xoá đúng bản ghi vừa tạo + ném lại lỗi gốc.
+  it('gửi email thất bại -> xoá bản ghi mã vừa tạo (tránh cooldown giả) và ném lại lỗi gốc', async () => {
+    const config = {
+      get: (key: string) => {
+        if (key === 'EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS') return '60';
+        if (key === 'EMAIL_VERIFICATION_TTL_SECONDS') return '600';
+        return undefined;
+      },
+    } as unknown as ConfigService;
+
+    const prisma = {
+      user: { findUnique: jest.fn().mockResolvedValue(null) },
+      emailVerificationCode: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue({ id: 'code-1' }),
+        delete: jest.fn().mockResolvedValue({}),
+      },
+    };
+
+    const sendError = new Error('smtp down');
+    const emailProvider = { sendVerificationEmail: jest.fn().mockRejectedValue(sendError) };
+    const smsProvider = { sendOtp: jest.fn() };
+
+    const service = new AuthService(
+      prisma as any,
+      {} as JwtService,
+      config,
+      smsProvider as any,
+      emailProvider as any,
+    );
+
+    await expect(service.requestEmailVerification('fail@example.test')).rejects.toThrow('smtp down');
+
+    // Xoá đúng bản ghi VỪA TẠO -> không còn mã mồ côi nào để cooldown chặn lần gửi sau.
+    expect(prisma.emailVerificationCode.delete).toHaveBeenCalledWith({ where: { id: 'code-1' } });
+    expect(prisma.emailVerificationCode.delete).toHaveBeenCalledTimes(1);
+  });
 });
