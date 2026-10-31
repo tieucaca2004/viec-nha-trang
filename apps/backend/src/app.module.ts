@@ -19,6 +19,7 @@ import { ReportsModule } from './reports/reports.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
 import { JobHunterModule } from './job-hunter/job-hunter.module';
+import { CommunityPostsModule } from './community-posts/community-posts.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { JobHunterModule } from './job-hunter/job-hunter.module';
     NotificationsModule,
     AdminModule,
     JobHunterModule,
+    CommunityPostsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

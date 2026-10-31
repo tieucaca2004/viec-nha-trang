@@ -700,3 +700,76 @@ model AuditLog {
   @@index([targetType, targetId])
   @@map("audit_logs")
 }
+
+// ---------- Nội dung cộng đồng nhập từ Facebook (tuyển dụng / tìm việc) ----------
+// Bảng RIÊNG, KHÔNG tái dùng `jobs`: jobs yêu cầu employer/location/area/lat-lng (NOT NULL) - bài
+// Facebook công khai không có các thông tin đó, gán placeholder = BỊA dữ liệu (bị cấm). Bảng này
+// giữ provenance (nguồn + URL gốc), kiểm duyệt và PII tách riêng (không công khai mặc định).
+enum CommunityPostType {
+  HIRING
+  JOB_SEEKER
+}
+
+enum CommunityPostStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+model CommunityPost {
+  id                 String              @id @default(uuid())
+
+  // Nguồn / provenance
+  source             SourceKind          @default(FACEBOOK)
+  sourceName         String              @map("source_name") // "facebook"
+  sourcePostId       String?             @map("source_post_id") // dữ liệu thật KHÔNG unique (3/174)
+  sourceUrl          String              @unique @map("source_url") // khóa chống trùng ổn định
+  sourceGroupName    String?             @map("source_group_name")
+  sourceGroupUrl     String?             @map("source_group_url")
+
+  // Phân loại + nội dung đã chuẩn hoá
+  postType           CommunityPostType   @map("post_type")
+  title              String?
+  body               String?             @db.Text
+  industry           String?
+  employerName       String?             @map("employer_name")
+  workLocation       String?             @map("work_location")
+  salaryMin          Int?                @map("salary_min")
+  salaryMax          Int?                @map("salary_max")
+  salaryCurrency     String?             @map("salary_currency")
+  salaryPeriod       String?             @map("salary_period")
+  salaryTextOriginal String?             @map("salary_text_original") @db.Text
+  employmentType     String?             @map("employment_type")
+  workSchedule       String?             @map("work_schedule")
+  experienceRequired String?             @map("experience_required")
+  benefits           String?             @db.Text
+  contactMethod      String?             @map("contact_method")
+  contactPublic      Boolean             @default(false) @map("contact_public")
+
+  // PII - KHÔNG BAO GIỜ trả về API công khai
+  contactsRaw        Json?               @map("contacts_raw")
+  dataQuality        String?             @map("data_quality")
+  duplicateOfId      String?             @map("duplicate_of_id")
+
+  // Thời gian
+  postedAt           DateTime?           @map("posted_at")
+  collectedAt        DateTime?           @map("collected_at")
+
+  // Kiểm duyệt
+  status             CommunityPostStatus @default(PENDING_REVIEW)
+  moderatedAt        DateTime?           @map("moderated_at")
+  moderatedBy        String?             @map("moderated_by")
+  moderationNote     String?             @map("moderation_note")
+
+  // Hết hạn hiển thị
+  expiresAt          DateTime?           @map("expires_at")
+
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  @@index([postType, status, postedAt])
+  @@index([status])
+  @@index([workLocation])
+  @@map("community_posts")
+}
