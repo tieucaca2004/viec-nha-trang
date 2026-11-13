@@ -156,6 +156,8 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
       skip: params.skip ?? 0,
       take: params.take ?? 20,
+      // Admin cần biết report nói về tin nào mới xử lý được.
+      include: { job: { select: { id: true, title: true } } },
     });
   }
 

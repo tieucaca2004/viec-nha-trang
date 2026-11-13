@@ -28,6 +28,14 @@ async function request(path: string, options: RequestInit = {}) {
     },
   });
   if (!res.ok) {
+    // Access token hết hạn sau JWT_ACCESS_EXPIRES_IN (15 phút) và CMS không refresh - nếu không xử lý,
+    // mọi trang hiện bảng rỗng (lỗi bị nuốt) và thao tác thất bại âm thầm. Đưa admin về đăng nhập lại.
+    if (res.status === 401 && token) {
+      clearToken();
+      if (window.location.pathname !== '/login') {
+        window.location.replace('/login');
+      }
+    }
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message ?? `Lỗi ${res.status}`);
   }

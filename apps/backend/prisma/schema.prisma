@@ -38,7 +38,7 @@ model City {
 model Area {
   id        String   @id @default(uuid())
   cityId    String   @map("city_id")
-  name      String // vd: "Vĩnh Hải"
+  name      String // tên đơn vị hành chính HIỆN HÀNH, vd: "Phường Bắc Nha Trang"
   slug      String
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
@@ -48,10 +48,30 @@ model Area {
   employerLocations  EmployerLocation[]
   jobs               Job[]
   jobSeekerProfiles  JobSeekerProfile[]
+  aliases            AreaAlias[]
 
   @@unique([cityId, slug])
   @@index([cityId])
   @@map("areas")
+}
+
+// Địa danh cũ (trước sáp nhập hành chính) trỏ về đơn vị hành chính HIỆN HÀNH tương ứng - bảng
+// bổ sung, KHÔNG thay thế Area.name. Tìm "Vĩnh Hải" -> trả về Area hiện hành (vd "Phường Bắc
+// Nha Trang"), không bao giờ ngược lại (Job/EmployerLocation luôn lưu areaId của đơn vị hiện
+// hành, chưa bao giờ trỏ tới alias). normalizedName = tên đã bỏ dấu + viết thường, dùng để search
+// không phân biệt dấu/hoa-thường mà không cần extension unaccent của Postgres.
+model AreaAlias {
+  id             String   @id @default(uuid())
+  areaId         String   @map("area_id")
+  name           String // tên hiển thị, vd "Vĩnh Hải"
+  normalizedName String   @map("normalized_name") // "vinh hai"
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  area Area @relation(fields: [areaId], references: [id])
+
+  @@unique([areaId, normalizedName])
+  @@index([normalizedName])
+  @@map("area_aliases")
 }
 
 // ---------- Tài khoản & vai trò (mục 5) ----------

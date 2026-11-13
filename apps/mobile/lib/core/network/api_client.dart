@@ -104,13 +104,31 @@ class ApiClient {
     debugPrint('[API] $method $path ${stopwatch.elapsedMilliseconds}ms $status');
   }
 
-  Future<bool> _tryRefresh() async {
+  // Backend xoay vòng refresh token (token cũ bị thu hồi ngay khi dùng). Nhiều request 401 cùng lúc
+  // (Future.wait ở Home/Profile, hoặc refreshMe() lúc khởi động chạy trên 1 ApiClient riêng) mà mỗi
+  // cái tự refresh bằng CÙNG token cũ thì chỉ cái đầu thành công, các cái sau bị 401 và đăng xuất
+  // nhầm người dùng. static + khoá theo token để mọi ApiClient dùng chung đúng 1 lần refresh.
+  static final Map<String, Future<bool>> _refreshInFlight = {};
+
+  Future<bool> _tryRefresh() {
+    final refreshToken = session.refreshToken;
+    if (refreshToken == null) return Future.value(false);
+    return _refreshInFlight.putIfAbsent(
+      refreshToken,
+      // Callback PHẢI trả void: remove() trả về chính Future này, whenComplete sẽ chờ nó -> tự chờ mình.
+      () => _refreshWith(refreshToken).whenComplete(() {
+        _refreshInFlight.remove(refreshToken);
+      }),
+    );
+  }
+
+  Future<bool> _refreshWith(String refreshToken) async {
     try {
       final res = await _http
           .post(
             Uri.parse('${AppConfig.apiBaseUrl}/auth/refresh'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'refreshToken': session.refreshToken}),
+            body: jsonEncode({'refreshToken': refreshToken}),
           )
           .timeout(_timeout);
       if (res.statusCode < 200 || res.statusCode >= 300) return false;

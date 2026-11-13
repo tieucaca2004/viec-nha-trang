@@ -62,6 +62,46 @@ describe('Admin E2E flow', () => {
     }
   });
 
+  it('shows which job a JOB report is about in the reports list', async () => {
+    const area = await prisma.area.findFirstOrThrow({ where: { cityId } });
+    const category = await prisma.jobCategory.findFirstOrThrow();
+    const employer = await prisma.employerProfile.create({
+      data: { businessName: 'Chủ tin admin e2e', user: { create: { phone: uniquePhone() } } },
+    });
+    const location = await prisma.employerLocation.create({
+      data: { employerId: employer.id, name: 'Cơ sở', address: 'x', cityId, areaId: area.id, latitude: 12.2, longitude: 109.1 },
+    });
+    const job = await prisma.job.create({
+      data: {
+        employerId: employer.id,
+        employerLocationId: location.id,
+        categoryId: category.id,
+        cityId,
+        areaId: area.id,
+        latitude: 12.2,
+        longitude: 109.1,
+        title: 'Tin bị báo cáo - admin e2e',
+        headcount: 1,
+        employmentType: 'PART_TIME',
+        shifts: ['EVENING'],
+        salaryMin: 1,
+        salaryMax: 2,
+        salaryUnit: 'HOUR',
+      },
+    });
+    const reporter = await prisma.user.create({ data: { phone: uniquePhone() } });
+    const report = await prisma.report.create({
+      data: { reporterId: reporter.id, targetType: 'JOB', jobId: job.id, reason: 'SCAM' },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/admin/reports')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const listed = res.body.find((r: { id: string }) => r.id === report.id);
+    expect(listed.job).toEqual({ id: job.id, title: 'Tin bị báo cáo - admin e2e' });
+  });
+
   it('manages job categories', async () => {
     const createRes = await request(app.getHttpServer())
       .post('/api/v1/admin/categories')

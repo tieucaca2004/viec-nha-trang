@@ -38,6 +38,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _savedJobIds = {};
   List<JobCategory> _categories = [];
   List<Area> _areas = [];
+  // Chốt chống double-tap cho nút lưu trên JobCard - khác với JobDetailScreen (_togglingSave) hay
+  // SavedJobsScreen (tự an toàn nhờ xoá khỏi list ngay lập tức trước khi await), nút lưu ở đây
+  // không có gì ngăn 2 lần bấm gần nhau đều lọt qua trong lúc request đầu còn đang treo.
+  final Set<String> _togglingSaveJobIds = {};
 
   static const _pageSize = 20;
 
@@ -57,19 +61,32 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // Cùng lớp lỗi đã sửa ở PostJobWizardScreen/JobSeekerProfileFormScreen: trước đây categories
+  // và areas được await TUẦN TỰ trong 1 try/catch, nên chỉ cần areas() lỗi là categories đã tải
+  // được cũng bị vứt đi - bộ lọc trang chủ mất luôn cả 2 dropdown dù 1 trong 2 API vẫn hoạt động
+  // bình thường. Chạy song song, giữ lại phần nào tải được.
   Future<void> _loadFilterOptions() async {
     final jobsService = context.read<JobsService>();
-    try {
-      final categories = await jobsService.categories();
-      final areas = await jobsService.areas();
-      if (!mounted) return;
-      setState(() {
-        _categories = categories;
-        _areas = areas;
-      });
-    } catch (_) {
+    final results = await Future.wait<Object?>([
+      _safeCall(jobsService.categories()),
+      _safeCall(jobsService.areas()),
+    ]);
+    if (!mounted) return;
+    final categoriesResult = results[0];
+    final areasResult = results[1];
+    setState(() {
       // Bộ lọc không tải được không nên chặn trang chủ hiển thị job - bỏ qua lặng lẽ,
       // filter sheet sẽ chỉ thiếu tuỳ chọn cho tới lần thử lại kế tiếp.
+      if (categoriesResult is List<JobCategory>) _categories = categoriesResult;
+      if (areasResult is List<Area>) _areas = areasResult;
+    });
+  }
+
+  Future<Object?> _safeCall(Future<Object?> future) async {
+    try {
+      return await future;
+    } on ApiException catch (e) {
+      return e;
     }
   }
 
@@ -101,6 +118,11 @@ class _HomeScreenState extends State<HomeScreen> {
   // Đặc tả AUTH UX Part 3/6: khách bấm Lưu -> hỏi xác thực (KHÔNG âm thầm lưu lạc quan rồi lỗi
   // 401 mới báo) -> xác thực xong tự tiếp tục lưu đúng job này, không cần bấm lại.
   Future<void> _toggleSave(Job job) async {
+    // Bug thật: không có gì chặn 2 lần bấm gần nhau trong lúc request đầu còn đang treo (khác
+    // JobDetailScreen._toggleSave() đã có _togglingSave, hay SavedJobsScreen._unsave() tự an
+    // toàn nhờ xoá khỏi list trước khi await) - dẫn tới 2 request POST/DELETE /saved-jobs.
+    if (_togglingSaveJobIds.contains(job.id)) return;
+    setState(() => _togglingSaveJobIds.add(job.id));
     final wasSaved = _savedJobIds.contains(job.id);
     try {
       final saved = await runWithAuth<bool>(
@@ -123,6 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
     } on ApiException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+    } finally {
+      if (mounted) setState(() => _togglingSaveJobIds.remove(job.id));
     }
   }
 
@@ -328,7 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return AsyncStateView<List<Job>>(
       loading: _loading,
       error: _error,
-      data: _loading ? null : _jobs,
+      // _jobs khởi tạo [] (không null) - phải truyền null khi lỗi, nếu không AsyncStateView hiện
+      // "Chưa có việc phù hợp" thay vì lỗi + THỬ LẠI (tái hiện thật: GET /jobs 500 trên staging).
+      data: (_loading || _error != null) ? null : _jobs,
       isEmpty: (jobs) => jobs.isEmpty,
       emptyMessage: 'Chưa có việc phù hợp. Thử đổi bộ lọc nhé.',
       onRetry: _load,
@@ -360,7 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _loadSavedIds();
               }),
               onApply: () => _apply(job),
-              onToggleSave: () => _toggleSave(job),
+              onToggleSave: _togglingSaveJobIds.contains(job.id) ? null : () => _toggleSave(job),
             );
           },
         ),

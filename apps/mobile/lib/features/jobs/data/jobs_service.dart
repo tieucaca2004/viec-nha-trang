@@ -86,6 +86,13 @@ class JobsService {
   // gọi lại mỗi lần mở màn hình profile/form - đặc tả hotfix §5: "không tải toàn bộ dữ liệu Area
   // nhiều lần", "KHÔNG hard-code lại danh sách Area nếu backend là source of truth". Area/City/
   // Category gần như tĩnh trong 1 phiên sử dụng, không cần refetch mỗi lần build lại 1 form.
+  //
+  // QUAN TRỌNG (fix lỗi "Chưa có dữ liệu khu vực." dù backend đã có data): CHỈ cache kết quả
+  // KHÔNG RỖNG. JobsService sống suốt phiên app (session-lifetime singleton qua ProxyProvider) -
+  // nếu 1 lần gọi API trả về [] (timing race lúc backend/DB chưa sẵn sàng, lỗi mạng thoáng qua,
+  // ...) mà cache lại [] đó, thì MỌI màn hình sau (kể cả nút THỬ LẠI) sẽ nhận [] mãi mãi trong
+  // suốt phiên, không bao giờ tự phục hồi dù backend đã có data thật. Không cache kết quả rỗng ->
+  // lần gọi tiếp theo luôn hỏi lại backend cho tới khi có ít nhất 1 phần tử.
   List<JobCategory>? _categoriesCache;
   final Map<String, List<Area>> _areasCache = {}; // key = cityId ?? '' (rỗng = tất cả)
   List<Map<String, dynamic>>? _citiesCache;
@@ -94,16 +101,17 @@ class JobsService {
     if (!forceRefresh && _categoriesCache != null) return _categoriesCache!;
     final res = await api.get('/categories') as List;
     final result = res.map((e) => JobCategory.fromJson(e)).toList();
-    _categoriesCache = result;
+    if (result.isNotEmpty) _categoriesCache = result;
     return result;
   }
 
   Future<List<Area>> areas({String? cityId, bool forceRefresh = false}) async {
     final key = cityId ?? '';
-    if (!forceRefresh && _areasCache.containsKey(key)) return _areasCache[key]!;
+    final cached = _areasCache[key];
+    if (!forceRefresh && cached != null) return cached;
     final res = await api.get('/areas', query: {'cityId': cityId}) as List;
     final result = res.map((e) => Area.fromJson(e)).toList();
-    _areasCache[key] = result;
+    if (result.isNotEmpty) _areasCache[key] = result;
     return result;
   }
 
@@ -113,7 +121,7 @@ class JobsService {
     if (!forceRefresh && _citiesCache != null) return _citiesCache!;
     final res = await api.get('/cities') as List;
     final result = res.cast<Map<String, dynamic>>();
-    _citiesCache = result;
+    if (result.isNotEmpty) _citiesCache = result;
     return result;
   }
 }

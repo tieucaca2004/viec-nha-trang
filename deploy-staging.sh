@@ -60,10 +60,10 @@ for var in JWT_ACCESS_SECRET JWT_REFRESH_SECRET; do
   fi
 done
 
-echo "==> [1/7] Khởi động PostgreSQL"
+echo "==> [1/8] Khởi động PostgreSQL"
 dc up -d postgres
 
-echo "==> [2/7] Chờ PostgreSQL healthy"
+echo "==> [2/8] Chờ PostgreSQL healthy"
 for i in $(seq 1 30); do
   status="$(docker inspect -f '{{.State.Health.Status}}' viec-nha-trang-staging-postgres 2>/dev/null || echo "starting")"
   if [ "$status" = "healthy" ]; then
@@ -77,13 +77,20 @@ for i in $(seq 1 30); do
   sleep 2
 done
 
-echo "==> [3/7] Build và khởi động backend"
+echo "==> [3/8] Build và khởi động backend"
 dc up -d --build backend
 
-echo "==> [4/7] Chạy Prisma migration thật (không migrate dev, không reset data)"
+echo "==> [4/8] Chạy Prisma migration thật (không migrate dev, không reset data)"
 dc exec -T backend npx prisma migrate deploy
 
-echo "==> [5/7] Kiểm tra health backend nội bộ (Node 20 fetch có sẵn, không phụ thuộc wget/curl)"
+# Seed dữ liệu khởi tạo (thành phố/khu vực/danh mục ngành nghề/tài khoản mẫu) - chạy bằng
+# `node dist-seed/seed.js` đã biên dịch sẵn trong image (xem apps/backend/Dockerfile), KHÔNG cần
+# ts-node trong container production. seed.ts dùng upsert/findFirst-or-create nên idempotent -
+# chạy lại nhiều lần (mỗi lần deploy) không tạo dữ liệu trùng lặp, không xoá dữ liệu đã có.
+echo "==> [5/8] Chạy seed dữ liệu khởi tạo (idempotent - an toàn chạy lại)"
+dc exec -T backend npm run seed:prod
+
+echo "==> [6/8] Kiểm tra health backend nội bộ (Node 20 fetch có sẵn, không phụ thuộc wget/curl)"
 for i in $(seq 1 15); do
   if dc exec -T backend node -e "
     fetch('http://localhost:3000/api/v1/health')
@@ -100,7 +107,7 @@ for i in $(seq 1 15); do
   sleep 2
 done
 
-echo "==> [6/7] Kiểm tra domain Caddy trước khi mở HTTPS công khai"
+echo "==> [7/8] Kiểm tra domain Caddy trước khi mở HTTPS công khai"
 if grep -q "$CADDY_PLACEHOLDER" Caddyfile.staging; then
   echo "    Caddyfile.staging vẫn dùng domain placeholder ($CADDY_PLACEHOLDER)."
   echo "    KHÔNG khởi động Caddy - postgres + backend đã chạy, kiểm tra nội bộ xong."
@@ -110,7 +117,7 @@ else
   dc up -d caddy
 fi
 
-echo "==> [7/7] Trạng thái toàn bộ container staging"
+echo "==> [8/8] Trạng thái toàn bộ container staging"
 dc ps
 
 echo "==> Xong. Nếu Caddy đã bật: xác nhận DNS domain trỏ đúng IP server rồi mới mở port 80/443 trên router."

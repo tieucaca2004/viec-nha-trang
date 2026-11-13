@@ -8,6 +8,7 @@ import '../../../shared/widgets/auth_prompt.dart';
 import '../../applications/data/applications_service.dart';
 import '../../profile/data/job_seeker_profile_service.dart';
 import '../../profile/presentation/job_seeker_profile_form_screen.dart';
+import '../../reports/data/reports_service.dart';
 import '../../saved_jobs/data/saved_jobs_service.dart';
 import '../data/jobs_service.dart';
 import '../../../shared/widgets/phone_verification_sheet.dart';
@@ -30,6 +31,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool _loading = true;
   bool _applied = false;
   bool _applying = false;
+  // Chốt chống double-tap RIÊNG với _applying: _applying chỉ điều khiển spinner của nút trong
+  // đúng khoảng thời gian gọi API apply() thật sự (giữ nguyên UX cũ - không hiện "đang xử lý"
+  // trong lúc chờ getJobSeekerProfile()/dialog xác nhận, vốn có thể chờ người dùng khá lâu).
+  // _applyInFlight khoá lại NGAY từ đầu _apply() và chỉ mở lại khi toàn bộ hàm kết thúc, chặn 2
+  // lần bấm gần nhau lọt qua cùng lúc dù _applying chưa bật.
+  bool _applyInFlight = false;
   bool _saved = false;
   bool _togglingSave = false;
 
@@ -86,82 +93,107 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   Future<void> _apply() async {
-    // Đặc tả AUTH UX Part 6: khách bấm ỨNG TUYỂN -> hỏi xác thực TRƯỚC bất kỳ bước nào khác (kể
-    // cả kiểm tra hồ sơ, vì getJobSeekerProfile() cần đăng nhập) -> xác thực xong tự quay lại
-    // đúng đây tiếp tục ứng tuyển, không phải tìm lại job/bấm lại từ Home.
-    if (!context.read<Session>().isLoggedIn) {
-      final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.');
-      if (!ok || !mounted) return;
-    }
-
-    final profileService = context.read<JobSeekerProfileService>();
-    final applicationsService = context.read<ApplicationsService>();
-    final profile = await profileService.getJobSeekerProfile();
-    if (!profileService.isCompleteEnoughToApply(profile)) {
-      if (!mounted) return;
-      await _promptCompleteProfile();
-      return;
-    }
-
-    if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Bạn muốn ứng tuyển công việc này?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ỨNG TUYỂN')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    setState(() => _applying = true);
+    // Bug thật: trước đây không có chốt nào ở đầu hàm - _applying chỉ bật ở BƯỚC CUỐI (ngay
+    // trước khi gọi API apply), sau cả getJobSeekerProfile() và dialog xác nhận, nên 2 lần bấm
+    // gần nhau đều lọt qua _apply() độc lập, mỗi lần tự mở dialog xác nhận riêng và có thể gửi 2
+    // POST /jobs/:id/apply. _applyInFlight (không phải _applying) khoá NGAY từ đầu vì nó không
+    // kích hoạt rebuild/spinner - nếu dùng _applying cho việc này, nút sẽ hiện spinner suốt lúc
+    // chờ dialog xác nhận, và CircularProgressIndicator (animation vô hạn) khiến pumpAndSettle
+    // không bao giờ ổn định trong test, đồng thời gây hiểu nhầm "đang xử lý" khi thực ra app chỉ
+    // đang chờ người dùng bấm dialog.
+    if (_applyInFlight) return;
+    _applyInFlight = true;
     try {
-      await applicationsService.apply(widget.jobId);
-      if (!mounted) return;
-      setState(() => _applied = true);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
-    } on ApiException catch (e) {
-      // Đặc tả §3: backend từ chối ứng tuyển khi số điện thoại chưa xác minh, báo bằng message
-      // cố định 'PHONE_NOT_VERIFIED' (không phải lỗi 403 chung) - mở sheet xác minh ngay tại
-      // đây, xong thì thử ứng tuyển lại 1 lần, không bắt người dùng bấm nút ỨNG TUYỂN lần nữa.
-      if (e.statusCode == 403 && e.rawMessage == 'PHONE_NOT_VERIFIED') {
-        if (!mounted) return;
-        final verified = await showPhoneVerificationSheet(context);
-        if (verified == true && mounted) {
-          try {
-            await applicationsService.apply(widget.jobId);
-            if (!mounted) return;
-            setState(() => _applied = true);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
-          } on ApiException catch (e2) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
-          }
-        }
-      } else if (e.isUnauthorized) {
-        // Phiên hết hạn giữa chừng (đặc tả Part 7) - hỏi xác thực lại rồi tự thử ứng tuyển lại
-        // đúng 1 lần, không bắt user thoát ra tìm lại job.
-        if (!mounted) return;
+      // Đặc tả AUTH UX Part 6: khách bấm ỨNG TUYỂN -> hỏi xác thực TRƯỚC bất kỳ bước nào khác (kể
+      // cả kiểm tra hồ sơ, vì getJobSeekerProfile() cần đăng nhập) -> xác thực xong tự quay lại
+      // đúng đây tiếp tục ứng tuyển, không phải tìm lại job/bấm lại từ Home.
+      if (!context.read<Session>().isLoggedIn) {
         final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.');
-        if (ok && mounted) {
-          try {
-            await applicationsService.apply(widget.jobId);
-            if (!mounted) return;
-            setState(() => _applied = true);
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
-          } on ApiException catch (e2) {
-            if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
-          }
-        }
-      } else {
+        if (!ok || !mounted) return;
+      }
+
+      final profileService = context.read<JobSeekerProfileService>();
+      final applicationsService = context.read<ApplicationsService>();
+      // Bug thật: getJobSeekerProfile() không được bọc try/catch nên lỗi 500/mất mạng ở đây khiến
+      // nút ỨNG TUYỂN im lặng không phản hồi gì - không loading, không thông báo lỗi, không crash
+      // rõ ràng, chỉ đơn giản là "bấm không có gì xảy ra". Bọc + báo lỗi đúng như phần applyJob bên
+      // dưới trong cùng file này.
+      Map<String, dynamic>? profile;
+      try {
+        profile = await profileService.getJobSeekerProfile();
+      } on ApiException catch (e) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+        return;
+      }
+      if (!profileService.isCompleteEnoughToApply(profile)) {
+        if (!mounted) return;
+        await _promptCompleteProfile();
+        return;
+      }
+
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Bạn muốn ứng tuyển công việc này?'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('ỨNG TUYỂN')),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+
+      setState(() => _applying = true);
+      try {
+        await applicationsService.apply(widget.jobId);
+        if (!mounted) return;
+        setState(() => _applied = true);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
+      } on ApiException catch (e) {
+        // Đặc tả §3: backend từ chối ứng tuyển khi số điện thoại chưa xác minh, báo bằng message
+        // cố định 'PHONE_NOT_VERIFIED' (không phải lỗi 403 chung) - mở sheet xác minh ngay tại
+        // đây, xong thì thử ứng tuyển lại 1 lần, không bắt người dùng bấm nút ỨNG TUYỂN lần nữa.
+        if (e.statusCode == 403 && e.rawMessage == 'PHONE_NOT_VERIFIED') {
+          if (!mounted) return;
+          final verified = await showPhoneVerificationSheet(context);
+          if (verified == true && mounted) {
+            try {
+              await applicationsService.apply(widget.jobId);
+              if (!mounted) return;
+              setState(() => _applied = true);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
+            } on ApiException catch (e2) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
+            }
+          }
+        } else if (e.isUnauthorized) {
+          // Phiên hết hạn giữa chừng (đặc tả Part 7) - hỏi xác thực lại rồi tự thử ứng tuyển lại
+          // đúng 1 lần, không bắt user thoát ra tìm lại job.
+          if (!mounted) return;
+          final ok = await requireAuthentication(context, reason: 'Để ứng tuyển, bạn cần đăng nhập hoặc tạo tài khoản.');
+          if (ok && mounted) {
+            try {
+              await applicationsService.apply(widget.jobId);
+              if (!mounted) return;
+              setState(() => _applied = true);
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ứng tuyển thành công.')));
+            } on ApiException catch (e2) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e2.userMessage)));
+            }
+          }
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.userMessage)));
+        }
+      } finally {
+        if (mounted) setState(() => _applying = false);
       }
     } finally {
-      if (mounted) setState(() => _applying = false);
+      _applyInFlight = false;
     }
   }
 
@@ -209,6 +241,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
+  Future<void> _openReportDialog() async {
+    final reported = await showDialog<bool>(
+      context: context,
+      builder: (_) => _ReportJobDialog(jobId: widget.jobId, reportsService: context.read<ReportsService>()),
+    );
+    if (reported == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã gửi báo cáo. Cảm ơn bạn đã giúp giữ an toàn cho cộng đồng.')),
+      );
+    }
+  }
+
   Future<void> _call(String? phone) async {
     if (phone == null) return;
     await launchUrl(Uri.parse('tel:$phone'));
@@ -230,6 +274,15 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               icon: Icon(_saved ? Icons.bookmark : Icons.bookmark_border),
               tooltip: _saved ? 'Bỏ lưu việc này' : 'Lưu việc này',
               onPressed: _toggleSave,
+            ),
+          // Báo cáo cần đăng nhập (POST /reports có JwtAuthGuard) - khách không thấy mục này.
+          if (_job != null && context.watch<Session>().isLoggedIn)
+            PopupMenuButton<String>(
+              tooltip: 'Tuỳ chọn khác',
+              onSelected: (value) {
+                if (value == 'report') _openReportDialog();
+              },
+              itemBuilder: (_) => const [PopupMenuItem(value: 'report', child: Text('Báo cáo tin'))],
             ),
         ],
       ),
@@ -264,7 +317,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         const Text('🟢 Đang tuyển', style: TextStyle(color: Colors.green)),
         const SizedBox(height: 12),
         Text(
-          '${job['salaryMin']}–${job['salaryMax']}đ',
+          // Dùng Job.salaryLabel có sẵn (đã đúng đơn vị + dấu phân cách hàng nghìn, đang được
+          // JobCard ở Home dùng) thay vì tự ghép '${salaryMin}–${salaryMax}đ' - cách cũ không có
+          // đơn vị (/giờ, /tháng, /ngày, /ca) nên "8000000–12000000đ" (lương THÁNG) trông như 8
+          // triệu đồng chứ không phải 8 triệu/tháng, và không khớp định dạng đã thấy ở thẻ Home
+          // cho cùng 1 tin.
+          provenanceJob.salaryLabel,
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green),
         ),
         if (area != null) Text('📍 ${area['name']}, Nha Trang'),
@@ -317,6 +375,101 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Dialog tự gửi POST /reports để lỗi API hiện ngay trong dialog và người dùng thử lại được mà
+/// không phải chọn lại lý do. Đóng (trả true) chỉ khi POST thành công.
+class _ReportJobDialog extends StatefulWidget {
+  final String jobId;
+  final ReportsService reportsService;
+  const _ReportJobDialog({required this.jobId, required this.reportsService});
+
+  @override
+  State<_ReportJobDialog> createState() => _ReportJobDialogState();
+}
+
+class _ReportJobDialogState extends State<_ReportJobDialog> {
+  String? _reason;
+  final _noteController = TextEditingController();
+  bool _submitting = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_submitting || _reason == null) return;
+    setState(() {
+      _submitting = true;
+      _errorMessage = null;
+    });
+    try {
+      await widget.reportsService.reportJob(jobId: widget.jobId, reason: _reason!, note: _noteController.text);
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _errorMessage = e.userMessage);
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Chặn đóng dialog (chạm ra ngoài / nút Back) khi POST đang chạy - nếu không report vẫn được
+    // lưu nhưng mất thông báo thành công và người dùng dễ gửi lại lần nữa.
+    return PopScope(
+      canPop: !_submitting,
+      child: _buildDialog(context),
+    );
+  }
+
+  Widget _buildDialog(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Báo cáo tin tuyển dụng'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final entry in ReportsService.jobReasonLabels.entries)
+              RadioListTile<String>(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                value: entry.key,
+                groupValue: _reason,
+                title: Text(entry.value),
+                onChanged: _submitting ? null : (value) => setState(() => _reason = value),
+              ),
+            TextField(
+              controller: _noteController,
+              enabled: !_submitting,
+              maxLines: 3,
+              decoration: const InputDecoration(hintText: 'Mô tả thêm (không bắt buộc)'),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 8),
+              Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(false),
+          child: const Text('HUỶ'),
+        ),
+        FilledButton(
+          onPressed: (_reason == null || _submitting) ? null : _submit,
+          child: _submitting
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Text('GỬI BÁO CÁO'),
+        ),
+      ],
     );
   }
 }

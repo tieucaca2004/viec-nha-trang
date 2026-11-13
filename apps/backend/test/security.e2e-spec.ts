@@ -206,6 +206,68 @@ describe('Security', () => {
     expect(count).toBe(1);
   });
 
+  describe('PATCH /jobs/:id location handling', () => {
+    function jobBody(employerLocationId: string, title: string) {
+      return {
+        employerLocationId,
+        categoryId,
+        title,
+        headcount: 1,
+        employmentType: 'PART_TIME',
+        shifts: ['EVENING'],
+        salaryMin: 25000,
+        salaryMax: 30000,
+        salaryUnit: 'HOUR',
+      };
+    }
+
+    it("rejects moving Employer B's own job onto Employer A's location (403) and leaves the job unchanged", async () => {
+      const locationB = await request(app.getHttpServer())
+        .post('/api/v1/me/employer-profile/locations')
+        .set('Authorization', `Bearer ${employerBToken}`)
+        .send({ name: 'B', address: 'B St', cityId, areaId, latitude: 12.3, longitude: 109.2 })
+        .expect(201);
+      const jobB = await request(app.getHttpServer())
+        .post('/api/v1/jobs')
+        .set('Authorization', `Bearer ${employerBToken}`)
+        .send(jobBody(locationB.body.id, 'Job của Employer B'))
+        .expect(201);
+      const jobA = await prisma.job.findUniqueOrThrow({ where: { id: employerAJobId } });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/jobs/${jobB.body.id}`)
+        .set('Authorization', `Bearer ${employerBToken}`)
+        .send(jobBody(jobA.employerLocationId, 'Job của Employer B - moved'))
+        .expect(403);
+
+      const after = await prisma.job.findUniqueOrThrow({ where: { id: jobB.body.id } });
+      expect(after.employerLocationId).toBe(locationB.body.id);
+      expect(after.title).toBe('Job của Employer B');
+    });
+
+    it("moving a job to another of the employer's own locations updates area and coordinates", async () => {
+      const otherArea = await prisma.area.create({
+        data: { cityId, name: `Khu vực PATCH test ${Date.now()}`, slug: `patch-test-${Date.now()}` },
+      });
+      const locationA2 = await request(app.getHttpServer())
+        .post('/api/v1/me/employer-profile/locations')
+        .set('Authorization', `Bearer ${employerAToken}`)
+        .send({ name: 'A2', address: 'A2 St', cityId, areaId: otherArea.id, latitude: 12.29, longitude: 109.19 })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/jobs/${employerAJobId}`)
+        .set('Authorization', `Bearer ${employerAToken}`)
+        .send(jobBody(locationA2.body.id, 'Job của Employer A'))
+        .expect(200);
+
+      expect(res.body.employerLocationId).toBe(locationA2.body.id);
+      expect(res.body.areaId).toBe(otherArea.id);
+      expect(res.body.latitude).toBe(12.29);
+      expect(res.body.longitude).toBe(109.19);
+    });
+  });
+
   it("prevents Employer B from changing status of Employer A's applications", async () => {
     const application = await prisma.application.findFirstOrThrow({ where: { jobId: employerAJobId } });
 

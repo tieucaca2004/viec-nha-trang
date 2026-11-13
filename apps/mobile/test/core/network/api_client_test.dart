@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -91,6 +92,53 @@ void main() {
       );
 
       await client.get('/jobs', query: {'keyword': 'phục vụ', 'categoryId': null});
+    });
+
+    group('refresh token xoay vòng: nhiều request 401 cùng lúc chỉ refresh ĐÚNG 1 lần', () {
+      // Giả lập đúng backend: mỗi refresh token chỉ dùng được 1 lần (bị thu hồi ngay khi đổi).
+      MockClient rotatingBackend({required void Function() onRefresh}) {
+        final usedRefreshTokens = <String>{};
+        var issued = 0;
+        return MockClient((request) async {
+          if (request.url.path.endsWith('/auth/refresh')) {
+            onRefresh();
+            final token = (jsonDecode(request.body) as Map)['refreshToken'] as String;
+            if (!usedRefreshTokens.add(token)) return jsonResponse({'message': 'revoked'}, 401);
+            issued++;
+            return jsonResponse({'accessToken': 'new-access-$issued', 'refreshToken': 'new-refresh-$issued'}, 200);
+          }
+          if (request.headers['Authorization'] == 'Bearer old-access') {
+            return jsonResponse({'message': 'Unauthorized'}, 401);
+          }
+          return jsonResponse({'path': request.url.path}, 200);
+        });
+      }
+
+      test('3 request song song trên cùng 1 ApiClient: đều thành công, vẫn đăng nhập', () async {
+        var refreshCalls = 0;
+        final client = ApiClient(session, httpClient: rotatingBackend(onRefresh: () => refreshCalls++));
+
+        final results = await Future.wait([client.get('/applications/me'), client.get('/saved-jobs'), client.get('/me')]);
+
+        expect(results.map((r) => r['path']), ['/api/v1/applications/me', '/api/v1/saved-jobs', '/api/v1/me']);
+        expect(refreshCalls, 1);
+        expect(session.isLoggedIn, isTrue);
+        expect(session.accessToken, 'new-access-1');
+        expect(session.refreshToken, 'new-refresh-1');
+      });
+
+      test('2 ApiClient khác nhau dùng chung Session (refreshMe lúc khởi động + màn hình): chỉ 1 lần refresh',
+          () async {
+        var refreshCalls = 0;
+        final backend = rotatingBackend(onRefresh: () => refreshCalls++);
+        final startupClient = ApiClient(session, httpClient: backend);
+        final screenClient = ApiClient(session, httpClient: backend);
+
+        await Future.wait([startupClient.get('/me'), screenClient.get('/jobs'), screenClient.get('/saved-jobs')]);
+
+        expect(refreshCalls, 1);
+        expect(session.isLoggedIn, isTrue);
+      });
     });
   });
 }

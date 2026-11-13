@@ -9,9 +9,16 @@ COPY package*.json ./
 COPY prisma ./prisma
 RUN npm ci
 
-COPY tsconfig.json nest-cli.json ./
+COPY tsconfig.json tsconfig.seed.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
+
+# Biên dịch prisma/seed.ts sang JS ngay ở builder stage (nơi ts-node/typescript - devDependencies
+# - vẫn còn cài) - image runtime chỉ chạy `node dist-seed/seed.js` bằng plain Node, KHÔNG cần
+# ts-node trong production. Sửa đúng nguyên nhân staging từng phải seed thủ công (`npm ci
+# --omit=dev` ở stage runtime không có ts-node, nên `npx prisma db seed` throw "ts-node: not
+# found") thay vì cài ts-node trực tiếp vào container đang chạy.
+RUN npm run build:seed
 
 FROM node:20-bookworm-slim AS runtime
 WORKDIR /app
@@ -31,6 +38,7 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npx prisma generate
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/dist-seed ./dist-seed
 
 # Cloud Run cấp PORT qua biến môi trường runtime - main.ts đã đọc process.env.PORT sẵn.
 EXPOSE 3000

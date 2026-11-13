@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/network/api_exception.dart';
 import '../../../shared/models/job.dart';
@@ -6,6 +7,7 @@ import '../../jobs/data/jobs_service.dart';
 import '../data/employer_jobs_service.dart';
 import '../data/employer_profile_service.dart';
 import '../../../shared/widgets/phone_verification_sheet.dart';
+import 'employer_business_setup_screen.dart';
 
 /// Wizard đăng tin cực ngắn - mỗi bước 1 câu hỏi, mục tiêu đăng tin trong 1-2 phút
 /// (đặc tả §19 Phase 3). Lương là trường bắt buộc: không cho qua bước nếu thiếu, khớp
@@ -39,6 +41,7 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   final _descriptionController = TextEditingController();
   bool _submitting = false;
   bool _loadingOptions = true;
+  bool _loadingLocations = false;
   String? _error;
 
   static const totalSteps = 8;
@@ -47,6 +50,17 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   void initState() {
     super.initState();
     _loadOptions();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _salaryMinController.dispose();
+    _salaryMaxController.dispose();
+    _shiftStartController.dispose();
+    _shiftEndController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   // Bug thật trên Beta (bước 1 trắng trơn, TIẾP TỤC bị mờ): trước đây categories và locations được
@@ -92,12 +106,66 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
     }
   }
 
+  // Bug thật trên Beta: nhà tuyển dụng MỚI (chưa có cơ sở nào) bị DEAD-END ở bước 5/8 - màn hình
+  // chỉ nói "Bạn chưa có cơ sở nào" mà không có cách nào để tạo cơ sở, TIẾP TỤC mãi mãi bị mờ.
+  // EmployerBusinessSetupScreen đã có sẵn (dùng đúng CreateEmployerLocationDto/addEmployerLocation
+  // hiện có, kể cả tự tạo employer profile trước nếu cần) - chỉ cần mở nó từ đây và nạp lại danh
+  // sách cơ sở khi quay về, KHÔNG reset _step/dữ liệu các bước 1-4 (push, không phải
+  // pushReplacement; chỉ _locations/_locationId được cập nhật).
+  Future<void> _createLocation() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const EmployerBusinessSetupScreen()),
+    );
+    if (created == true) await _reloadLocations();
+  }
+
+  Future<void> _reloadLocations() async {
+    setState(() {
+      _loadingLocations = true;
+      _error = null;
+    });
+    final employerProfileService = context.read<EmployerProfileService>();
+    final result = await _safeCall(employerProfileService.myEmployerLocations());
+    if (!mounted) return;
+    setState(() {
+      if (result is List) {
+        _locations = result;
+        // Cơ sở vừa tạo là cơ sở DUY NHẤT ngay sau khi từ trạng thái rỗng - tự động chọn luôn,
+        // đúng yêu cầu "location vừa tạo tự động chọn nếu phù hợp với architecture hiện tại".
+        if (result.isNotEmpty && (_locationId == null || !result.any((l) => l['id'] == _locationId))) {
+          _locationId = result.first['id'];
+        }
+      } else if (result is ApiException) {
+        // Tạo cơ sở đã thành công (EmployerBusinessSetupScreen đã pop(true)) - chỉ riêng bước nạp
+        // lại danh sách bị lỗi. Báo rõ và cho thử lại, KHÔNG được coi như tạo cơ sở thất bại.
+        _error = 'Đã tạo cơ sở nhưng chưa tải lại được danh sách. ${result.userMessage}';
+      }
+      _loadingLocations = false;
+    });
+  }
+
+  // Ô lương chỉ nhận chữ số (xem inputFormatters ở _stepSalary) nên int.parse luôn thành công với
+  // chuỗi không rỗng - trả null nghĩa là người dùng chưa nhập, KHÔNG phải "lương bằng 0".
+  int? _parseSalary(String raw) => int.tryParse(raw.trim());
+
+  // Lương tối thiểu lớn hơn lương tối đa là dữ liệu sai: backend chỉ validate từng trường riêng
+  // (@IsInt @Min(0) trên salaryMin/salaryMax, không có kiểm tra chéo), nên tin vẫn được tạo với
+  // khoảng lương đảo ngược - hiển thị sai trên thẻ việc làm và làm lệch cả bộ lọc lương
+  // (salaryMax >= filter.salaryMin / salaryMin <= filter.salaryMax) lẫn sort theo lương.
+  bool get _salaryRangeInvalid {
+    final min = _parseSalary(_salaryMinController.text);
+    final max = _parseSalary(_salaryMaxController.text);
+    return min != null && max != null && min > max;
+  }
+
   bool _canGoNext() {
     switch (_step) {
       case 0:
         return _categoryId != null;
       case 2:
-        return _salaryMinController.text.isNotEmpty && _salaryMaxController.text.isNotEmpty;
+        final min = _parseSalary(_salaryMinController.text);
+        final max = _parseSalary(_salaryMaxController.text);
+        return min != null && max != null && min <= max;
       case 3:
         return _shifts.isNotEmpty;
       case 4:
@@ -135,8 +203,8 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
       'shifts': _shifts.toList(),
       'shiftStartTime': _shiftStartController.text.trim().isEmpty ? null : _shiftStartController.text.trim(),
       'shiftEndTime': _shiftEndController.text.trim().isEmpty ? null : _shiftEndController.text.trim(),
-      'salaryMin': int.tryParse(_salaryMinController.text) ?? 0,
-      'salaryMax': int.tryParse(_salaryMaxController.text) ?? 0,
+      'salaryMin': _parseSalary(_salaryMinController.text) ?? 0,
+      'salaryMax': _parseSalary(_salaryMaxController.text) ?? 0,
       'salaryUnit': _salaryUnit,
       'startUrgency': _startUrgency,
       'requiredExperience': _requiredExperience,
@@ -145,6 +213,10 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   }
 
   Future<void> _submit() async {
+    // onPressed được tính tại thời điểm build, nên 2 lần chạm trong CÙNG 1 frame đều gọi lại
+    // closure cũ (_submitting vẫn còn false) - không có chốt này thì bấm nhanh 2 lần sẽ tạo 2 tin
+    // tuyển dụng trùng nhau. Cùng chốt như _save()/_searchAddress() ở EmployerBusinessSetupScreen.
+    if (_submitting) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -295,6 +367,12 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
                   child: TextField(
                     controller: _salaryMinController,
                     keyboardType: TextInputType.number,
+                    // Người dùng VN gõ/dán "5.000.000" là bình thường. Trước đây int.tryParse() trả
+                    // null cho chuỗi có dấu phân cách rồi rơi vào `?? 0`, nên tin được đăng với mức
+                    // lương 0 mà không có bất kỳ cảnh báo nào. Lọc còn chữ số ngay khi nhập: dấu
+                    // chấm/phẩy bị bỏ đi thành đúng con số người dùng định nhập, và cũng chặn luôn
+                    // dấu trừ (backend yêu cầu @Min(0)).
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(labelText: 'Từ', border: OutlineInputBorder()),
                   ),
@@ -304,12 +382,22 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
                   child: TextField(
                     controller: _salaryMaxController,
                     keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(labelText: 'Đến', border: OutlineInputBorder()),
                   ),
                 ),
               ],
             ),
+            // Nút TIẾP TỤC bị khoá khi khoảng lương đảo ngược - phải nói rõ lý do, nếu không người
+            // dùng lại gặp đúng kiểu bế tắc "nút mờ mà không biết vì sao" như bug bước 5/8 trước đây.
+            if (_salaryRangeInvalid) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Lương tối thiểu đang lớn hơn lương tối đa.',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ],
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -364,7 +452,26 @@ class _PostJobWizardScreenState extends State<PostJobWizardScreen> {
   Widget _stepLocation() => _stepWrapper(
         'Địa điểm',
         _locations.isEmpty
-            ? const Text('Bạn chưa có cơ sở nào. Hãy tạo hồ sơ cơ sở trước khi đăng tin.')
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Bạn chưa có cơ sở nào.'),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Thêm địa chỉ cơ sở để sử dụng cho tin tuyển dụng.',
+                    style: TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_loadingLocations)
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    FilledButton.icon(
+                      onPressed: _createLocation,
+                      icon: const Icon(Icons.add_business),
+                      label: const Text('+ TẠO CƠ SỞ'),
+                    ),
+                ],
+              )
             : Wrap(
                 spacing: 8,
                 runSpacing: 8,

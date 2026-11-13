@@ -123,11 +123,24 @@ export class AuthService {
     const codeHash = hashValue(code); // scrypt salted hash - không lưu plaintext (đặc tả §1)
     const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
 
-    await this.prisma.emailVerificationCode.create({
+    const pending = await this.prisma.emailVerificationCode.create({
       data: { email, codeHash, expiresAt, userId: existing?.id },
     });
 
-    await this.emailProvider.sendVerificationEmail(email, code);
+    try {
+      await this.emailProvider.sendVerificationEmail(email, code);
+    } catch (error) {
+      // Không để lại bản ghi mã "mồ côi": nếu gửi email thất bại, bản ghi consumedAt=null vừa tạo
+      // sẽ khiến MỌI lần gửi lại sau đó (kể cả ở màn Đăng nhập - dùng chung đúng logic này) bị
+      // cooldown giả "Vui lòng đợi N giây" chặn, làm cả đăng ký lẫn đăng nhập cùng "hỏng". Xoá
+      // đúng bản ghi vừa tạo (best-effort) rồi ném lại lỗi gốc để client thấy đúng 503/lỗi gửi.
+      try {
+        await this.prisma.emailVerificationCode.delete({ where: { id: pending.id } });
+      } catch {
+        // Bỏ qua lỗi xoá - lỗi gốc (gửi email) mới là nguyên nhân cần báo cho client.
+      }
+      throw error;
+    }
 
     return { expiresInSeconds: ttlSeconds };
   }
